@@ -1,0 +1,4 @@
+interface:
+  display_name: "Daily Codex Audit"
+  short_description: "Audit Codex work from receipts"
+  default_prompt: "Use $daily-codex-audit."
