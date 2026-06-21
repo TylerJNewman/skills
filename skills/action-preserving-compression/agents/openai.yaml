@@ -1,0 +1,4 @@
+interface:
+  display_name: "Action-Preserving Compression"
+  short_description: "Compress experience into useful heuristics"
+  default_prompt: "Use $action-preserving-compression to turn these cases into the coarsest heuristic that preserves competent action."

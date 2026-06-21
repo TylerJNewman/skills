@@ -1,0 +1,4 @@
+interface:
+  display_name: "Distill Law"
+  short_description: "Distill falsifiable system laws"
+  default_prompt: "Use $distill-law to turn this system quality into a falsifiable probe."

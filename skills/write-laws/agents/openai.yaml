@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Laws"
+  short_description: "Law notes with provenance receipts"
+  default_prompt: "Use $write-laws to write these laws into the law memory project with provenance, source anchors, index updates, and a log entry."
