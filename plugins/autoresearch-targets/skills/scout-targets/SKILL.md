@@ -12,7 +12,11 @@ The conserved quantity is the **receipt**: the exact command that turns a candid
 1. **Frame the hunt.** Name the two corpora in concrete paths and sources: the *codebase* (services, queries, routes, jobs, build) and the *work logs* (past conversations, PLAN/EXPERIMENTS notes, Substack drafts, issue threads). State the search is read-only.
    **Done when:** both corpora are named with reachable paths/sources and the read-only boundary is stated.
 
-2. **Fan out lanes.** Launch one independent read-only lane per candidate **family**. Each lane hunts only its family and returns nominations carrying a receipt. Lanes never write and never read each other's findings. Families to cover: query latency (`EXPLAIN ANALYZE` on a frozen snapshot), endpoint p50/p99 under fixed load, bundle size / lab Core Web Vitals, type coverage (`tsc`), test/mutation score, cost-per-request, background-job duration, cache hit-rate, error rate, throughput. Add a family only if a lane can name its receipt.
+2. **Fan out lanes.** Launch one independent read-only lane per candidate **family**. Each lane hunts only its family and returns nominations carrying a receipt. Lanes never write and never read each other's findings. Two axes of families:
+   - *Runtime* — query latency (`EXPLAIN ANALYZE` on a frozen snapshot), endpoint p50/p99 under fixed load, bundle size / lab Core Web Vitals, type coverage (`tsc`), test/mutation score, cost-per-request, background-job duration, cache hit-rate, error rate, throughput.
+   - *Artifact* — prompts, skills, agent-instruction files, templates with schema checks, and retrieval pipelines (precision / recall / latency). These are where the suite optimizes its *own* tooling against an eval set; they are often the highest-fit autoresearch targets and the easiest to overlook while hunting only runtime numbers.
+
+   Add a family only if a lane can name its receipt.
    **Stop rule:** if a lane needs another lane's finding to score a candidate, *return the dependency* — do not braid the lanes. A target whose verifier depends on a second target is two targets or none.
    **Done when:** every family lane has returned and every nomination carries a receipt.
 
