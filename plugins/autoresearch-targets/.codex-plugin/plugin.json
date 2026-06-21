@@ -1,9 +1,23 @@
 {
   "name": "autoresearch-targets",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Scout a codebase and work logs for autoresearch targets, gate them for causal honesty, calibrate the judges that score them, and frame the survivors as loops safe to run overnight.",
   "author": {
     "name": "Tyler"
   },
-  "keywords": ["autoresearch", "optimization", "evals", "goodhart", "verifiability", "judge-panel"]
+  "keywords": ["autoresearch", "optimization", "evals", "goodhart", "verifiability", "judge-panel"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Autoresearch Targets",
+    "shortDescription": "Find, gate, and frame optimization targets for autoresearch loops.",
+    "longDescription": "Four composable skills. scout-targets fans out read-only lanes over a codebase and work logs to nominate optimization candidates with receipts. gates is the shared rule of recognition — seven properties plus a Goodhart pre-mortem that decide whether a target is autoresearch-shaped. judge-panel calibrates a multi-judge evaluator against held-out human labels before it is trusted to score. frame-loop turns one green candidate into a runnable contract, a frozen harness, a loop mode, and a goal contract the agent cannot redefine.",
+    "developerName": "Tyler",
+    "category": "Development",
+    "capabilities": ["Read"],
+    "defaultPrompt": [
+      "Scout my codebase and work logs for autoresearch targets.",
+      "Is this metric autoresearch-shaped? Run it through the gates.",
+      "Frame this green candidate as a loop I can run overnight."
+    ]
+  }
 }

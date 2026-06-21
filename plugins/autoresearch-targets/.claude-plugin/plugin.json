@@ -1,0 +1,9 @@
+{
+  "name": "autoresearch-targets",
+  "version": "0.4.0",
+  "description": "Scout a codebase and work logs for autoresearch targets, gate them for causal honesty, calibrate the judges that score them, and frame the survivors as loops safe to run overnight.",
+  "author": {
+    "name": "Tyler"
+  },
+  "keywords": ["autoresearch", "optimization", "evals", "goodhart", "verifiability", "judge-panel"]
+}

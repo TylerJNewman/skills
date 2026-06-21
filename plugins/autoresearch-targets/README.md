@@ -2,6 +2,8 @@
 
 Three skills that find where an automated optimization loop is worth running, decide whether the metric is honest, and turn the survivors into loops an agent can run unattended without cheating. The discovery half is read-only — it nominates and frames; it never runs the loop or edits the code.
 
+Runs in both **Codex** and **Claude Code** from one source tree — dual manifests over a shared `skills/`. See [`INSTALL.md`](INSTALL.md).
+
 ## The pipeline
 
 ```
