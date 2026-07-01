@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grug"
+  short_description: "Simple, blunt, practical answers"
+  default_prompt: "Use $grug to give a simple, exact, practical answer."
