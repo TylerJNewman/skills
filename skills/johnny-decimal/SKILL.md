@@ -70,15 +70,17 @@ Read `references/design.md`, then follow it: inventory, categories, areas, seed
 IDs, standard zeros, migration plan via inboxes.
 
 Done when the category set is confirmed, the proposed tree and JDex skeleton are
-delivered in the required output template, and `scripts/jd-lint.sh` passes on
+delivered in the required output template, and every invariant below holds on
 the scaffold before real files move.
 
 ### Audit Or Tidy A Tree
 
-1. Run `scripts/jd-lint.sh <root> [jdex-file]`.
-2. Report violations grouped by rule; add what the script cannot see: overlapping
-   categories, IDs that should split, inbox rot, and archives used as dumping
-   grounds.
+1. Check every invariant below, using whatever tools the environment provides
+   (a shell reference implementation lives at `scripts/jd-lint.sh`; use it,
+   port it, or check by hand — the invariants are the contract, not the script).
+2. Report violations grouped by invariant; add what mechanical checks cannot
+   see: overlapping categories, IDs that should split, inbox rot, and archives
+   used as dumping grounds.
 3. Before moving anything, produce a move manifest. Never move, rename, or delete
    anything not listed.
 
@@ -90,8 +92,28 @@ the scaffold before real files move.
 Allowed actions: `create-folder`, `move`, `rename`, `move+rename`,
 `create-jdex-entry`, `leave`, `inbox`, `archive`, `skip`.
 
-Done when every lint check has a pass/fail verdict and every failure has a
+Done when every invariant has a pass/fail verdict and every failure has a
 manifest row or proposed fix the user can accept or reject line by line.
+
+## Invariants
+
+The checkable contract of any Johnny.Decimal system. Verify these on design
+scaffolds and audits; how you check them is up to you.
+
+1. Grammar: areas are `N0-N9 Title` with matching decade digits; categories are
+   `NN Title` whose first digit matches their area; IDs are `NN.NN Title` whose
+   category digits match their parent category.
+2. Content lives only in IDs — nothing directly inside an area or category.
+3. Regular IDs start at `.11` and categories at `x1`; `.0x` slots are reserved
+   for standard zeros.
+4. Limits: at most 10 areas, 10 categories per area, 100 IDs per category.
+5. Index ↔ reality, 1:1 both ways: every index entry has a real location, and
+   everything in the system has an index entry.
+6. One home: no item is filed under two IDs. Cross-references are links or
+   "relates to" notes, never a second copy.
+7. In note systems, links must resolve the way the host app resolves them
+   (e.g. Obsidian resolves `[[links]]` by filename, not display title — where
+   they differ, use `[[filename|Title]]`).
 
 ### Grow A Full System
 
