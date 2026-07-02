@@ -95,6 +95,16 @@ Allowed actions: `create-folder`, `move`, `rename`, `move+rename`,
 Done when every invariant has a pass/fail verdict and every failure has a
 manifest row or proposed fix the user can accept or reject line by line.
 
+### Grow A Full System
+
+Read `references/expansion.md`. Use the smallest tool that removes the
+constraint: extend the end (`AC.ID+`), then expand one area, then multiple
+systems (`SYS.AC.ID`).
+
+Done when the chosen strategy is named, the two alternatives are rejected with
+one-line reasons, and the resulting scheme is documented in the system's `00.00`
+index entry.
+
 ## Invariants
 
 The checkable contract of any Johnny.Decimal system. Verify these on design
@@ -114,16 +124,6 @@ scaffolds and audits; how you check them is up to you.
 7. In note systems, links must resolve the way the host app resolves them
    (e.g. Obsidian resolves `[[links]]` by filename, not display title — where
    they differ, use `[[filename|Title]]`).
-
-### Grow A Full System
-
-Read `references/expansion.md`. Use the smallest tool that removes the
-constraint: extend the end (`AC.ID+`), then expand one area, then multiple
-systems (`SYS.AC.ID`).
-
-Done when the chosen strategy is named, the two alternatives are rejected with
-one-line reasons, and the resulting scheme is documented in the system's `00.00`
-index entry.
 
 ## Defaults
 
