@@ -107,6 +107,11 @@ index entry.
 
 - JDex: one note per ID in the user's existing notes app; otherwise one
   plaintext file `00.00 Index.md`, one line per ID.
+- Overlay/MOC systems (pointer notes over an existing corpus, e.g. a notes
+  graph): still build the area/category folder tree; each ID is a single note
+  file inside its category folder. Flat ID-prefixed files look unorganized to
+  a human browsing the file tree — numbers alone don't substitute for folders.
+  Zeros stay at system root.
 - No headers (`AC.x0`) in self-designed systems unless the grouping is stable.
 - Two plausible homes for one thing: decide, record the decision in the JDex,
   and do not revisit. The index is the system's memory.
