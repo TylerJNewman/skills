@@ -1,0 +1,4 @@
+interface:
+  display_name: "Johnny.Decimal"
+  short_description: "Organize information with Johnny.Decimal."
+  default_prompt: "Use Johnny.Decimal to organize this material."
