@@ -49,7 +49,7 @@ const pickClick = (label) => async (_url, init) => {
     const pick = (label) => Object.keys(criteria).find((k) => criteria[k] === label);
     return answer(criteria, [pick('Scroll down'), pick('Click Settings'), 'DONE'][turn++]);
   };
-  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, provider: 'gateway', allowedOrigins: ['https://example.test'], policy });
+  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, allowedOrigins: ['https://example.test'], policy });
   assert.equal(out.status, 'needs_verification');
   assert.deepEqual(calls, ['scroll undefined down', 'click 1']);
   assert.deepEqual(out.history.map((h) => h.confidence), [0.7, 0.7, 0.7], 'confidence must be TypeSafe\'s, not the choice probability');
@@ -65,7 +65,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
     click: async () => { clicked = true; return settles; },
   };
   globalThis.fetch = pickClick('Click Settings');
-  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, provider: 'gateway', allowedOrigins: ['https://example.test'], policy });
+  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, allowedOrigins: ['https://example.test'], policy });
   assert.equal(out.status, status);
   assert.equal(out.history.filter((h) => h.executed).length, 1);
   assert.match(out.error, error);
@@ -85,7 +85,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   let late = false;
   const pick = pickClick('Click Settings');
   globalThis.fetch = async (url, init) => { requests++; late ||= gap !== false; return pick(url, init); };
-  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, provider: 'gateway', allowedOrigins: ['https://example.test'], policy });
+  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, allowedOrigins: ['https://example.test'], policy });
   assert.equal(late, false, 'a request to Jev did not immediately follow the tab\'s last check');
   assert.equal(out.status, 'stopped');
   assert.equal(requests, 1, 'a request went to Jev after the page asked for a new tab');

@@ -8,7 +8,7 @@ export async function choose(task, key = process.env.AI_GATEWAY_API_KEY) {
   const text = (value) => typeof value === 'string' && value.trim().length > 0;
   if (!task || !['goal', 'app', 'window', 'state'].every((field) => text(task[field])) ||
       !Array.isArray(task.actions) || task.actions.length > 30 ||
-      JSON.stringify(task).length > 24000) throw new Error('Provide goal, app, window, state, and up to 30 observed actions (24 KB maximum).');
+      JSON.stringify(task).length > 24000) throw new Error('Provide goal, app, window, state, and up to 30 observed actions (24,000 characters maximum).');
   const actions = task.actions.map((action) => {
     if (!action || !Number.isSafeInteger(action.index) || action.index < 0 || !text(action.name) ||
         !['click', 'scroll'].includes(action.op) ||
@@ -20,7 +20,7 @@ export async function choose(task, key = process.env.AI_GATEWAY_API_KEY) {
       : { op: 'scroll', index: action.index, name: action.name, direction: action.direction, amount: 1,
           description: `Scroll ${action.direction} within ${action.name}` };
   });
-  const result = await decide({ key, provider: 'gateway', goal: task.goal,
+  const result = await decide({ key, goal: task.goal,
     state: { app: task.app, window: task.window, accessibility: task.state }, actions, timeoutMs: 10000 });
   const status = result.confidence < 0.55 ? 'low_confidence' : result.choice === 'DONE' ? 'needs_verification'
     : result.action ? 'proposed' : result.choice === 'WAIT' ? 'wait' : 'blocked';

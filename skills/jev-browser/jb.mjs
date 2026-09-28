@@ -31,7 +31,7 @@ JEV_ENV_FILE (default: the muse-birds .env.local, per the /jev skill).`;
 const HOME = join(homedir(), '.cache', 'jev-browser');
 const OWNED = join(HOME, 'tabs'); // one file per tab jb owns: <targetId>.json
 const ORIGINS = join(homedir(), '.config', 'jev-browser', 'origins');
-const JEV = { envFile: process.env.JEV_ENV_FILE ?? '/Users/tyler/code/muse-birds/.env.local', provider: 'gateway', model: 'typesafe-ai/jev' };
+const JEV = { envFile: process.env.JEV_ENV_FILE ?? '/Users/tyler/code/muse-birds/.env.local' };
 const QUANTUM = 'https://quantum.loan';
 const ACCOUNT = 'tnewman@quantafinance.com';
 const SHELL = '[data-sidebar]'; // Quantum's app-shell sidebar parts (at least its trigger); absent on its sign-in page
