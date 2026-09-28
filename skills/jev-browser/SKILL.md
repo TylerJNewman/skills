@@ -1,6 +1,6 @@
 ---
 name: jev-browser
-description: Browser work in Dex Work Chrome tabs the agent opens with `jb`: deep links, named clicks, typing, and Jev autopilot for unfamiliar navigation on approved sites. Use for quantum.loan QA or smoke tests, clicking through a website, or when Tyler says jev browser.
+description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: deep links, named clicks, typing, and Jev autopilot for unfamiliar navigation on approved sites. Use for quantum.loan QA or smoke tests, clicking through a website, or when Tyler says jev browser."
 ---
 
 # Jev browser
