@@ -1,5 +1,5 @@
 // One Chrome tab over CDP, shaped like the cua_repl tab bridge.mjs drives (getAXState, click,
-// scroll, pressKey, reload), plus the verbs jb adds for hand-flying. Snapshot format:
+// scroll, pressKey), plus the verbs jb adds for hand-flying. Snapshot format:
 //   Browser tab: <title>. URL: "<url>".
 //   <index> <role>[ (<states>)] <name>[, Value: <value>]
 // Every click, type, key press, and scroll first passes `tab.authorize`, which jb installs, so hand-flown
@@ -383,11 +383,6 @@ export async function attachTab(targetId, { connection } = {}) {
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
       tab.inputs.add('trusted');
       return settle();
-    },
-
-    async reload() {
-      await c.send('Page.reload');
-      return waitForLoad();
     },
 
     async navigate(url) {
