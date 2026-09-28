@@ -4,6 +4,8 @@ Personal agent skills I use and refine over time.
 
 ## Skills
 
+- [jev-computer-use](./skills/jev-computer-use/SKILL.md) - Hybrid routing with experimental supervised Jev proposals for native navigation. [Install and status](./JEV.md).
+- [jev-browser](./skills/jev-browser/SKILL.md) - Browser navigation with `jb`, exercised on Tyler's Dex Work setup; machine-specific setup required.
 - [action-preserving-compression](./skills/action-preserving-compression/SKILL.md) - Turn tacit experience into action-preserving heuristics.
 - [daily-codex-audit](./skills/daily-codex-audit/SKILL.md) - Review recent Codex/agent work from receipts and produce a daily audit.
 - [design-deep-interfaces](./skills/design-deep-interfaces/SKILL.md) - Deepen human-facing interfaces by reducing decision load while preserving operational truth, control, and recovery.
