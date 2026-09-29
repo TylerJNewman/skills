@@ -1,6 +1,6 @@
 ---
 name: jev-browser
-description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: deep links, named clicks, typing, and Jev autopilot for unfamiliar navigation on approved sites. Use for quantum.loan QA or smoke tests, clicking through a website, or when Tyler says jev browser."
+description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: deep links, named clicks, typing, and Jev autopilot for unfamiliar navigation on approved sites. Use for quantum.loan QA or smoke tests, clicking through a website, a repeated form with a saved runner, or when Tyler says jev browser."
 ---
 
 # Jev browser
@@ -9,13 +9,14 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 
 ## Fly a task
 
-1. **Choose the route.** Dex Work tasks go through `jb`. Localhost dev servers use the in-app browser preview tools with a minted session (`apps/quantum/CLAUDE.md`), and Oracle keeps its own route. Dex Personal stays closed to agents, including for recovery.
-2. **Open** with `jb open <url>` and note the tab id. On quantum.loan, `jb` prints `signed in as tnewman@quantafinance.com`, and re-checks that account, the app shell, and the address before every action and before every page goes to Jev. When it prints `NOT VERIFIED` or refuses for identity, stop and ask Tyler to sign in in that same tab, then rerun; never recover through another profile, tab, or launcher.
-3. **Name the landing** before acting: the record, the destination, the selected control, the loaded content, relevant errors, and any checkpoint the path itself must pass. Verify each checkpoint when you reach it; never chain across checkpoints that need their own evidence.
-4. **Route each step** by the first row of the routing table that fits it.
-5. **After autopilot**, do what its `next:` line says, starting from the state it printed; a menu or dialog it opened may still be open. Once you have hand-flown past a disengage, a fresh `jev` run can take over from the current page; after two disengages on one goal, hand-fly the rest.
-6. **Land** with fresh evidence for every condition from step 3: `jb <tab> snap` (`snap <regex>` keeps matching lines; `snap --text <regex>` also searches page text such as prices, which can be clipped). A line in the snapshot does not prove it is on screen, so a visual claim needs `jb <tab> shot`, which prints the image's path, and your own look at the image. Missing evidence is Not covered, never Pass.
-7. **Close** every tab you opened or were given with `jb <tab> close`. Use only tab ids from your own task, one agent per tab.
+1. **Choose the route.** Dex Work tasks go through `jb`. Localhost dev servers use the in-app browser preview tools with a minted session (`apps/quantum/CLAUDE.md`), except the isolated `jb` integration fixture at `http://jb-fixture.localhost:4173`, including its declared wrong-origin alias, which `jb` drives; other localhost servers keep that route. Oracle keeps its own route. Dex Personal stays closed to agents, including for recovery.
+2. **Reuse a saved runner** before you explore a form: `grep -rlF "# jb-run origin=<origin> " runs/` in this skill's folder (the trailing space is part of the header). Read the header of each hit; when its `entry` and `account` fit your task, write the items as a JSON list of `{request_id, name, amount}` strings and, once Tyler has approved this batch's consequential clicks, launch it once: `python3 -I runs/<host>/<workflow>/run.py <items.json> --yes`. Skip to Close. The runner opens, verifies, and closes its own tabs, so read its result JSON against your request. Exit 2 (applicability stop) and 3 (uncertain write) hand the task back to you: read the reason line and resume reasoning from the printed state. After 3 never Create again until a readback shows whether the record exists. With no hit, continue.
+3. **Open** with `jb open <url>` and note the tab id. On quantum.loan, `jb` prints `signed in as tnewman@quantafinance.com`, and re-checks that account, the app shell, and the address before every action and before every page goes to Jev. When it prints `NOT VERIFIED` or refuses for identity, stop and ask Tyler to sign in in that same tab, then rerun; never recover through another profile, tab, or launcher.
+4. **Name the landing** before acting: the record, the destination, the selected control, the loaded content, relevant errors, and any checkpoint the path itself must pass. Verify each checkpoint when you reach it; never chain across checkpoints that need their own evidence.
+5. **Route each step** by the first row of the routing table that fits it.
+6. **After autopilot**, do what its `next:` line says, starting from the state it printed; a menu or dialog it opened may still be open. Once you have hand-flown past a disengage, a fresh `jev` run can take over from the current page; after two disengages on one goal, hand-fly the rest.
+7. **Land** with fresh evidence for every condition from step 4: `jb <tab> snap` (`snap <regex>` keeps matching lines; `snap --text <regex>` also searches page text such as prices, which can be clipped). A line in the snapshot does not prove it is on screen, so a visual claim needs `jb <tab> shot`, which prints the image's path, and your own look at the image. Missing evidence is Not covered, never Pass.
+8. **Close** every tab you opened or were given with `jb <tab> close`. Use only tab ids from your own task, one agent per tab.
 
 ## Routing
 
@@ -25,6 +26,7 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 | Typing or keys | Hand-fly: `type "<field name>" "<text>"` (`""` names the focused field), `press` (arrows, Enter, Escape) |
 | A known URL, when the clicks on the way are not under test | `jb <tab> go <url>` |
 | Controls you have already seen, each with a unique name | Hand-fly: `jb <tab> click "A" "B"` with each name exactly as `snap` prints it; each waits up to 10 s to appear, so one call crosses page changes |
+| A form you have already scripted on this origin | A saved runner: step 2 |
 | An unfamiliar path on an approved origin | Autopilot: `jb <tab> jev "<one observable goal>"` |
 | A native dropdown, a frame, an upload, a drag | Not supported by `jb`: stop and tell Tyler |
 | None of these, clearly | Snap and plan it yourself |
@@ -32,6 +34,13 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 When the page opens a new tab, or asks to, `jb` stops before its next action or Jev request on the original tab, which ends a click chain or an autopilot run, and prints `opened new tab <id>` for each tab that appeared, even between commands. Each is yours to verify, drive, and close.
 
 Autopilot runs only on origins Tyler approved in `~/.config/jev-browser/origins`, and only on the origin a run starts from. Each decision sends Jev the whole snapshot, the goal, and the run's history through Vercel AI Gateway; `--allow "<regex>"` narrows what it may click but redacts nothing. Keep mail, sign-in pages, and borrower lists hand-flown. Autopilot clicks only enabled, named, unique controls, never types, and skips toggles and consequential names such as save, send, delete, approve, fund, and sign; on quantum.loan it clicks only tabs and links.
+
+A runner is a frozen script that hand-flies a repeated form. Freeze one only after the candidate itself has created and read back one item on a fixture or a scratch record and rejected one mismatch (wrong account, origin, or form state). Save it at `runs/<origin-host>/<workflow>/run.py` in this skill's folder. Line 1 is the header `# jb-run origin=<origin> entry=<path glob> account=<marker>`, for example:
+
+    # jb-run origin=https://app.hubspot.com entry=/payment-links/*/create account=quanta-work
+    # jb-run origin=http://jb-fixture.localhost:4173 entry=/ account=acme-test
+
+Write the manifest, holding SHA-256 of every runner file, the applicability contract, and the per-item command limits, to `~/.config/jev-browser/manifests/<origin-host>/<workflow>.json`, beside `origins` and outside the runner folder. A runner exits 0 on success, 2 when the contract fails before any edit, 3 when a write's outcome is unknown. A consequential click inside a runner still needs Tyler's go-ahead in chat for this batch, then `--yes`.
 
 ## quantum.loan map
 
