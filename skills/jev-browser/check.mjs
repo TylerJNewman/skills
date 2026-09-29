@@ -115,8 +115,9 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   assert.throws(() => bridge.checkState(text, ['https://evil.test']), /left authorized origins/);
 }
 
-// 4. The execution check. On quantum.loan it is an allowlist of reviewed navigation and the search
-//    palette's own input and results, with toggles and consequential names refused first; elsewhere
+// 4. The execution check. On quantum.loan it is an allowlist of reviewed navigation, the search
+//    palette's own input and results, and chat composer input behind --yes, with toggles and
+//    consequential names outside the composer refused; elsewhere
 //    toggles, consequential names, form Enter, and value-changing keys need --yes, and Enter on a control
 //    gets exactly the verdict a click on it would.
 {
@@ -219,7 +220,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
 
   const save = fake({ context: async () => facts('button', 'Save'), meta: () => ({ role: 'button', name: 'Save', props: {} }) });
   guard(save, true);
-  await assert.rejects(save.authorize(click), /read-only quantum\.loan/);
+  await assert.rejects(save.authorize(click), /unsupported quantum\.loan action/);
   const chat = fake({ context: async () => ({ ...facts('button', 'Send message'), chatComposer: true }), meta: () => facts('button', 'Send message') });
   guard(chat, false);
   await assert.rejects(chat.authorize(click), /--yes/);

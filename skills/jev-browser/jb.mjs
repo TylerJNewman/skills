@@ -98,16 +98,16 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
       (verb === 'click' && meta.role === 'button' && CHAT_INPUTS.has(meta.name))))
       return soft('Quantum chat input needs task authorization');
     if (verb === 'click') {
-      if (isToggle(meta) || CONSEQUENTIAL.test(meta.name)) return hard(`read-only quantum.loan: ${meta.role} ${said(meta)} could change data`);
+      if (isToggle(meta) || CONSEQUENTIAL.test(meta.name)) return hard(`unsupported quantum.loan action: ${meta.role} ${said(meta)} could change data`);
       if (meta.role === 'tab' || meta.role === 'link') return null;
       if (meta.role === 'button' && (QUANTUM_OPENERS.has(meta.name) || SEARCH_BUTTON.test(meta.name))) return null;
       if (meta.dialog === SEARCH_DIALOG && ((meta.role === 'option' && meta.inResults) || (meta.role === 'button' && meta.name === 'Close'))) return null;
-      return hard(`read-only quantum.loan: jb clicks only tabs, links, reviewed menu openers, and the search palette, not ${meta.role} ${said(meta)}`);
+      return hard(`unsupported quantum.loan action: jb clicks only tabs, links, reviewed menu openers, the search palette, and chat input controls, not ${meta.role} ${said(meta)}`);
     }
-    if (verb === 'type') return meta.dialog === SEARCH_DIALOG && meta.searchInput ? null : hard('read-only quantum.loan: jb types only into the search palette\'s own input');
+    if (verb === 'type') return meta.dialog === SEARCH_DIALOG && meta.searchInput ? null : hard('unsupported quantum.loan action: jb types only into the search palette\'s own input or the chat composer');
     if (SAFE_KEYS.has(key)) return null;
     if (focused?.chatComposer && focused.name === 'Message composer') return soft('Quantum chat input needs task authorization');
-    if (!(focused?.dialog === SEARCH_DIALOG && focused.searchInput)) return hard(`read-only quantum.loan: ${key} goes only to the search palette's own input`);
+    if (!(focused?.dialog === SEARCH_DIALOG && focused.searchInput)) return hard(`unsupported quantum.loan action: ${key} goes only to the search palette's own input or the chat composer`);
     return key === 'Enter' && !focused.resultSelected ? hard('no search result is selected; snap and check it first') : null;
   }
   if (verb === 'click') {

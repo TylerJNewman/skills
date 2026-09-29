@@ -28,8 +28,8 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 | Controls you have already seen, each with a unique name | Hand-fly: `jb <tab> click "A" "B"` with each name exactly as `snap` prints it; each waits up to 10 s to appear, so one call crosses page changes |
 | A form you have already scripted on this origin | A saved runner: step 2 |
 | An unfamiliar path on an approved origin | Autopilot: `jb <tab> jev "<one observable goal>"` |
-| A native file picker after an authorized Attach file click | Bring the owned tab forward with `shot`, then use `cua_repl` on the observed Dex Work Chrome window to choose the approved file. Return to `jb snap` to verify the attachment. |
-| A native dropdown, a frame, a drag | Use `cua_repl` in that same verified, owned Dex Work tab; observe the control before input and verify the result afterward. |
+| A native file chooser opened by an authorized chat `Attach file` click | Bring that same verified, owned tab forward with `shot`, then use `cua_repl` only on the observed file chooser to choose the approved file. Return to `jb snap` to verify the attachment. |
+| A native dropdown, a frame, a drag | Not supported by `jb`: stop and tell Tyler |
 | None of these, clearly | Snap and plan it yourself |
 
 When the page opens a new tab, or asks to, `jb` stops before its next action or Jev request on the original tab, which ends a click chain or an autopilot run, and prints `opened new tab <id>` for each tab that appeared, even between commands. Each is yours to verify, drive, and close.
@@ -52,8 +52,8 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 ## Boundaries
 
 - quantum.loan supports navigation, search, and authorized chat input. `Open chat` opens the loan drawer. For the actual chat composer, use `type "Message composer" "<text>" --yes` and `click "Send message" --yes`; `Attach file`, queued follow-ups, and stop generation use the same task authorization. `--yes` acknowledges authorization already present in the conversation; do not ask again for an approved task. Loan edits, deletion, and other business actions remain outside this gate.
-- Native input uses the same owned Work tab and approved task scope. Keep identity/account checks and consequential-action policies; native tools do not create authority. After a file-picker interaction, verify the filename and upload result before submitting the chat.
-- Elsewhere, consequential input requires task authorization, then `--yes`; reuse authorization already given in the conversation.
+- `cua_repl` is only for the file chooser an authorized chat `Attach file` click opens, in the same verified, owned Work tab; native tools do not create authority. After choosing the file, verify the filename and upload result before submitting the chat.
+- Elsewhere, a consequential click, a toggle, Enter in a form field, or a key that changes a value waits for Tyler's explicit go-ahead in chat, then `--yes`.
 - With the Dex window covered, `jb` dispatches pointer input from the page and turns animations off, and says so. That is navigation evidence only: verify an interaction path by rerunning it with the window visible, since a later screenshot does not validate earlier page-dispatched input. `open` and `shot` can make Dex Work Chrome's last-used profile, which stalls Oracle's local runs until Tyler clicks a Dex Personal window.
 - `jb` touches only the tabs it opened and the tabs those opened.
 
