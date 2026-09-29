@@ -21,7 +21,7 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
   jb <tab> close                   close the tab
 
   --yes   after click, type, or press: Tyler approved this consequential action in chat.
-          It never unlocks quantum.loan, disabled controls, or unnamed controls.
+          On quantum.loan it unlocks chat input only; identity and target checks still apply.
 
 <tab> is the id jb printed, or any unique prefix. jb drives only tabs it opened and tabs those opened.
 Autopilot runs only on origins listed in ~/.config/jev-browser/origins (one per line), because
@@ -38,7 +38,8 @@ const SHELL = '[data-sidebar]'; // Quantum's app-shell sidebar parts (at least i
 const SEARCH_DIALOG = 'Search Quantum';
 const SEARCH_BUTTON = /^Search\b.*⌘ ?K$/; // its label changes between releases ("Search everything... ⌘ K", "Search... ⌘ K")
 // Buttons on quantum.loan reviewed as navigation only: they open the sidebar, its menus, or the loan's section list.
-const QUANTUM_OPENERS = new Set(['Toggle Sidebar', 'Loan sections', 'Leads', 'Loans', 'Borrowers', 'Accounting', 'More', 'Admin', 'Developer']);
+const QUANTUM_OPENERS = new Set(['Toggle Sidebar', 'Loan sections', 'Leads', 'Loans', 'Borrowers', 'Accounting', 'More', 'Admin', 'Developer', 'Open chat']);
+const CHAT_INPUTS = new Set(['Attach file', 'Send message', 'Queue after answer', 'Stop generation']);
 // Consequential by name. Autopilot never clicks these; elsewhere a hand-flown one needs --yes.
 export const CONSEQUENTIAL = /\b(delete|remove|archive|submit|send|save|publish|pay|purchase|buy|checkout|sign|approve|fund|transfer|upload|import|export|download|disconnect|log ?out|change|sync|generate|create|edit|invite|share|reply|forward|accept|confirm|enable|disable)\b/i;
 // Snapshot role names of controls that hold a setting; autopilot never clicks them.
@@ -82,7 +83,7 @@ const isDisabled = (m) => m.props.disabled === true || m.props.disabled === 'tru
  * read at dispatch time: `meta` for the target, `focused` for keys, each with Chrome's role, name, and
  * properties, its dialog's name, and its search relationship (searchInput, inResults, resultSelected).
  * Returns null, or { reason, hard }: a hard refusal cannot be overridden; a soft one needs Tyler's --yes.
- * quantum.loan is read-only, so there it is an allowlist of reviewed navigation and the search palette.
+ * Quantum permits navigation/search and explicitly approved chat-composer input.
  */
 export function verdictFor({ verb, meta, key, focused, quantum }) {
   const hard = (reason) => ({ reason, hard: true });
@@ -93,6 +94,9 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
     if (verb === 'click' && !meta.name) return hard('an unnamed control cannot be clicked by name; click a named one');
   }
   if (quantum) {
+    if (meta?.chatComposer && ((verb === 'type' && meta.name === 'Message composer') ||
+      (verb === 'click' && meta.role === 'button' && CHAT_INPUTS.has(meta.name))))
+      return soft('Quantum chat input needs task authorization');
     if (verb === 'click') {
       if (isToggle(meta) || CONSEQUENTIAL.test(meta.name)) return hard(`read-only quantum.loan: ${meta.role} ${said(meta)} could change data`);
       if (meta.role === 'tab' || meta.role === 'link') return null;
@@ -102,6 +106,7 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
     }
     if (verb === 'type') return meta.dialog === SEARCH_DIALOG && meta.searchInput ? null : hard('read-only quantum.loan: jb types only into the search palette\'s own input');
     if (SAFE_KEYS.has(key)) return null;
+    if (focused?.chatComposer && focused.name === 'Message composer') return soft('Quantum chat input needs task authorization');
     if (!(focused?.dialog === SEARCH_DIALOG && focused.searchInput)) return hard(`read-only quantum.loan: ${key} goes only to the search palette's own input`);
     return key === 'Enter' && !focused.resultSelected ? hard('no search result is selected; snap and check it first') : null;
   }
