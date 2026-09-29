@@ -67,8 +67,7 @@ const RELATION = `function () {
   const list = this.closest('[role="listbox"]');
   const inResults = !!(d && list && this.getAttribute('role') === 'option' && [...d.querySelectorAll('[role="combobox"]')].some((i) => listOf(i) === list));
   const resultSelected = searchInput && !!own.querySelector('[role="option"][aria-selected="true"]');
-  const chatComposer = !!this.closest('[data-chat-composer-dropzone="true"]');
-  return { searchInput, inResults, resultSelected, chatComposer };
+  return { searchInput, inResults, resultSelected };
 }`;
 const FINGERPRINT = '`${location.href}|${document.getElementsByTagName("*").length}|${document.body?.textContent.length}`';
 export const POPUP = 'the page opened, or asked to open, a new tab, so jb stopped on this one; it prints the new tab once it appears';

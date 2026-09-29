@@ -123,6 +123,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
 {
   const m = (role, name, props = {}, rel = {}) => ({ role, name, props, dialog: null, searchInput: false, inResults: false, resultSelected: false, ...rel });
   const search = { dialog: 'Search Quantum' };
+  const chat = { dialog: 'Chat' };
   const Q = { quantum: true };
   const E = { quantum: false };
   const ok = (args) => assert.equal(verdictFor(args), null, JSON.stringify(args));
@@ -134,14 +135,15 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   ok({ ...Q, verb: 'click', meta: m('button', 'Search everything... ⌘ K') });
   ok({ ...Q, verb: 'click', meta: m('button', 'Search... ⌘ K') });
   ok({ ...Q, verb: 'click', meta: m('button', 'Open chat') });
-  soft({ ...Q, verb: 'type', meta: m('textbox', 'Message composer', {}, { chatComposer: true }) });
-  soft({ ...Q, verb: 'click', meta: m('button', 'Send message', {}, { chatComposer: true }) });
-  soft({ ...Q, verb: 'click', meta: m('button', 'Attach file', {}, { chatComposer: true }) });
-  soft({ ...Q, verb: 'press', key: 'Enter', focused: m('textbox', 'Message composer', {}, { chatComposer: true }) });
-  hard({ ...Q, verb: 'type', meta: m('textbox', 'Message composer') });
+  soft({ ...Q, verb: 'type', meta: m('textbox', 'Message Quantum', {}, chat) });
+  soft({ ...Q, verb: 'click', meta: m('button', 'Send message', {}, chat) });
+  soft({ ...Q, verb: 'click', meta: m('button', 'Attach file', {}, chat) });
+  soft({ ...Q, verb: 'press', key: 'Enter', focused: m('textbox', 'Message Quantum', {}, chat) });
+  hard({ ...Q, verb: 'type', meta: m('textbox', 'Message Quantum') });
   hard({ ...Q, verb: 'click', meta: m('button', 'Send message') });
-  hard({ ...Q, verb: 'click', meta: m('button', 'Delete account', {}, { chatComposer: true }) });
-  hard({ ...Q, verb: 'click', meta: m('button', 'Send message', { disabled: true }, { chatComposer: true }) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Delete account', {}, chat) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Start new chat', {}, chat) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Send message', { disabled: true }, chat) });
   hard({ ...Q, verb: 'click', meta: m('button', 'Save', { expanded: false }) });
   hard({ ...Q, verb: 'click', meta: m('button', 'Tools', { hasPopup: 'menu' }) });
   hard({ ...Q, verb: 'click', meta: m('link', 'Delete account') });
@@ -221,7 +223,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   const save = fake({ context: async () => facts('button', 'Save'), meta: () => ({ role: 'button', name: 'Save', props: {} }) });
   guard(save, true);
   await assert.rejects(save.authorize(click), /unsupported quantum\.loan action/);
-  const chat = fake({ context: async () => ({ ...facts('button', 'Send message'), chatComposer: true }), meta: () => facts('button', 'Send message') });
+  const chat = fake({ context: async () => ({ ...facts('button', 'Send message'), dialog: 'Chat' }), meta: () => facts('button', 'Send message') });
   guard(chat, false);
   await assert.rejects(chat.authorize(click), /--yes/);
   guard(chat, true);
