@@ -115,13 +115,15 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   assert.throws(() => bridge.checkState(text, ['https://evil.test']), /left authorized origins/);
 }
 
-// 4. The execution check. On quantum.loan it is an allowlist of reviewed navigation and the search
-//    palette's own input and results, with toggles and consequential names refused first; elsewhere
+// 4. The execution check. On quantum.loan it is an allowlist of reviewed navigation, the search
+//    palette's own input and results, and chat composer input behind --yes, with toggles and
+//    consequential names outside the composer refused; elsewhere
 //    toggles, consequential names, form Enter, and value-changing keys need --yes, and Enter on a control
 //    gets exactly the verdict a click on it would.
 {
   const m = (role, name, props = {}, rel = {}) => ({ role, name, props, dialog: null, searchInput: false, inResults: false, resultSelected: false, ...rel });
   const search = { dialog: 'Search Quantum' };
+  const chat = { dialog: 'Chat' };
   const Q = { quantum: true };
   const E = { quantum: false };
   const ok = (args) => assert.equal(verdictFor(args), null, JSON.stringify(args));
@@ -132,6 +134,16 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   ok({ ...Q, verb: 'click', meta: m('button', 'Loans', { expanded: false }) });
   ok({ ...Q, verb: 'click', meta: m('button', 'Search everything... ⌘ K') });
   ok({ ...Q, verb: 'click', meta: m('button', 'Search... ⌘ K') });
+  ok({ ...Q, verb: 'click', meta: m('button', 'Open chat') });
+  soft({ ...Q, verb: 'type', meta: m('textbox', 'Message Quantum', {}, chat) });
+  soft({ ...Q, verb: 'click', meta: m('button', 'Send message', {}, chat) });
+  soft({ ...Q, verb: 'click', meta: m('button', 'Attach file', {}, chat) });
+  soft({ ...Q, verb: 'press', key: 'Enter', focused: m('textbox', 'Message Quantum', {}, chat) });
+  hard({ ...Q, verb: 'type', meta: m('textbox', 'Message Quantum') });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Send message') });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Delete account', {}, chat) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Start new chat', {}, chat) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Send message', { disabled: true }, chat) });
   hard({ ...Q, verb: 'click', meta: m('button', 'Save', { expanded: false }) });
   hard({ ...Q, verb: 'click', meta: m('button', 'Tools', { hasPopup: 'menu' }) });
   hard({ ...Q, verb: 'click', meta: m('link', 'Delete account') });
@@ -210,7 +222,14 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
 
   const save = fake({ context: async () => facts('button', 'Save'), meta: () => ({ role: 'button', name: 'Save', props: {} }) });
   guard(save, true);
-  await assert.rejects(save.authorize(click), /read-only quantum\.loan/);
+  await assert.rejects(save.authorize(click), /unsupported quantum\.loan action/);
+  const chat = fake({ context: async () => ({ ...facts('button', 'Send message'), dialog: 'Chat' }), meta: () => facts('button', 'Send message') });
+  guard(chat, false);
+  await assert.rejects(chat.authorize(click), /--yes/);
+  guard(chat, true);
+  await chat.authorize(click);
+  chat.email = 'someone@example.test';
+  await assert.rejects(chat.authorize(click), /session is someone@example\.test/);
   const elsewhere = fake({ href: 'https://example.test/', context: async () => facts('switch', 'Dark mode'), meta: () => ({ role: 'switch', name: 'Dark mode', props: {} }) });
   guard(elsewhere, true);
   await elsewhere.authorize(click);
