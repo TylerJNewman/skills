@@ -42,6 +42,8 @@ const QUANTUM_OPENERS = new Set(['Toggle Sidebar', 'Loan sections', 'Leads', 'Lo
 const CHAT_DIALOG = 'Chat'; // the chat drawer `Open chat` opens; its message box is named CHAT_COMPOSER
 const CHAT_COMPOSER = 'Message Quantum';
 const CHAT_INPUTS = new Set(['Attach file', 'Send message', 'Queue after answer', 'Stop generation']);
+const inChat = (m) => m?.chatComposer || m?.dialog === CHAT_DIALOG;
+const isChatField = (m) => (m?.chatComposer && m.name === 'Message composer') || (m?.dialog === CHAT_DIALOG && m.name === CHAT_COMPOSER);
 // Consequential by name. Autopilot never clicks these; elsewhere a hand-flown one needs --yes.
 export const CONSEQUENTIAL = /\b(delete|remove|archive|submit|send|save|publish|pay|purchase|buy|checkout|sign|approve|fund|transfer|upload|import|export|download|disconnect|log ?out|change|sync|generate|create|edit|invite|share|reply|forward|accept|confirm|enable|disable)\b/i;
 // Snapshot role names of controls that hold a setting; autopilot never clicks them.
@@ -96,7 +98,7 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
     if (verb === 'click' && !meta.name) return hard('an unnamed control cannot be clicked by name; click a named one');
   }
   if (quantum) {
-    if (meta?.dialog === CHAT_DIALOG && ((verb === 'type' && meta.name === CHAT_COMPOSER) ||
+    if (inChat(meta) && ((verb === 'type' && isChatField(meta)) ||
       (verb === 'click' && meta.role === 'button' && CHAT_INPUTS.has(meta.name))))
       return soft('Quantum chat input needs task authorization');
     if (verb === 'click') {
@@ -108,7 +110,7 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
     }
     if (verb === 'type') return meta.dialog === SEARCH_DIALOG && meta.searchInput ? null : hard('unsupported quantum.loan action: jb types only into the search palette\'s own input or the chat composer');
     if (SAFE_KEYS.has(key)) return null;
-    if (focused?.dialog === CHAT_DIALOG && focused.name === CHAT_COMPOSER) return soft('Quantum chat input needs task authorization');
+    if (isChatField(focused)) return soft('Quantum chat input needs task authorization');
     if (!(focused?.dialog === SEARCH_DIALOG && focused.searchInput)) return hard(`unsupported quantum.loan action: ${key} goes only to the search palette's own input or the chat composer`);
     return key === 'Enter' && !focused.resultSelected ? hard('no search result is selected; snap and check it first') : null;
   }
