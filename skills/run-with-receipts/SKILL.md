@@ -32,7 +32,7 @@ Cue: "make this reusable and prove it", "prove it's faster". Each step ends on i
 7. Write the handoff: scores with artifacts, test command, baseline versus result, smallest change, unresolved items (rows scored 2 with a known gap). Exit: another agent can repeat the test from the file list.
 8. Commit the subject change alone when the user asks. Exit: the hash sits in the handoff.
 
-Rubric rows and the Goodhart pre-mortem come from `gates`, the evaluator boundary from `frame-loop` (`references/boundary.md`), both in `plugins/autoresearch-targets`.
+For rubric design, independent grading, evaluator boundaries, and Goodhart checks, read `/Users/tyler/.codex/skills/frame-loop/references/evaluation-and-promotion.md`. For Git candidates use its `references/ratchet.md`. The old disabled autoresearch-targets plugin is historical source, not the active workflow.
 
 Decision rules:
 - The grader owns the scorecard, logs, held-out inputs, and counts; missing evidence scores unmeasured.
