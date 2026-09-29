@@ -139,6 +139,15 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   soft({ ...Q, verb: 'click', meta: m('button', 'Send message', {}, chat) });
   soft({ ...Q, verb: 'click', meta: m('button', 'Attach file', {}, chat) });
   soft({ ...Q, verb: 'press', key: 'Enter', focused: m('textbox', 'Message Quantum', {}, chat) });
+  const fullChat = { chatComposer: true };
+  soft({ ...Q, verb: 'type', meta: m('textbox', 'Message composer', {}, fullChat) });
+  soft({ ...Q, verb: 'click', meta: m('button', 'Attach file', {}, fullChat) });
+  soft({ ...Q, verb: 'click', meta: m('button', 'Send message', {}, fullChat) });
+  soft({ ...Q, verb: 'press', key: 'Enter', focused: m('textbox', 'Message composer', {}, fullChat) });
+  hard({ ...Q, verb: 'type', meta: m('textbox', 'Message composer') });
+  hard({ ...Q, verb: 'type', meta: m('textbox', 'Principal', {}, fullChat) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Send message', { disabled: true }, fullChat) });
+  hard({ ...Q, verb: 'click', meta: m('button', 'Delete account', {}, fullChat) });
   hard({ ...Q, verb: 'type', meta: m('textbox', 'Message Quantum') });
   hard({ ...Q, verb: 'click', meta: m('button', 'Send message') });
   hard({ ...Q, verb: 'click', meta: m('button', 'Delete account', {}, chat) });
