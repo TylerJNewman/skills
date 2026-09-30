@@ -1,6 +1,6 @@
 ---
 name: jev-browser
-description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: deep links, authorized chat input, native file pickers, and Jev autopilot for unfamiliar navigation on approved sites. Use for quantum.loan QA or smoke tests, clicking through a website, a repeated form with a saved runner, or when Tyler says jev browser."
+description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: deep links, authorized chat input and PDF attachment, and Jev autopilot for unfamiliar navigation on approved sites. Use for quantum.loan QA or smoke tests, clicking through a website, a repeated form with a saved runner, or when Tyler says jev browser."
 ---
 
 # Jev browser
@@ -24,6 +24,7 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 |---|---|
 | The profile, account, destination, or permission is uncertain | Stop and ask Tyler |
 | Typing or keys | Hand-fly: `type "<field name>" "<text>"` (`""` names the focused field), `press` (arrows, Enter, Escape) |
+| Attach a local PDF to Quantum full chat | `jb <tab> attach /absolute/path/file.pdf --yes`. Chrome selects the file directly; verify the filename and completed preview in `snap` before sending. |
 | A known URL, when the clicks on the way are not under test | `jb <tab> go <url>` |
 | Controls you have already seen, each with a unique name | Hand-fly: `jb <tab> click "A" "B"` with each name exactly as `snap` prints it; each waits up to 10 s to appear, so one call crosses page changes |
 | A form you have already scripted on this origin | A saved runner: step 2 |
@@ -52,6 +53,7 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 ## Boundaries
 
 - quantum.loan supports navigation, search, and authorized chat input. `Open chat` opens the loan drawer. For the actual chat composer, use `type "Message Quantum" "<text>" --yes` in the loan drawer or `type "Message composer" "<text>" --yes` on the full-page `/chat`, then `click "Send message" --yes`; `Attach file`, queued follow-ups, and stop generation use the same task authorization. `--yes` acknowledges authorization already present in the conversation; do not ask again for an approved task. Loan edits, deletion, and other business actions remain outside this gate.
+- `attach` uses the same verified Work session and authorization as `Attach file`, selects only the full-chat composer's PDF input, and triggers the app's normal preview. It does not submit a message. On an uncertain upload, inspect the draft before retrying; upload success requires the preview filename and ready state, then a saved document/result after sending.
 - `cua_repl` is only for the file chooser an authorized chat `Attach file` click opens, in the same verified, owned Work tab; native tools do not create authority. After choosing the file, verify the filename and upload result before submitting the chat.
 - Elsewhere, a consequential click, a toggle, Enter in a form field, or a key that changes a value waits for Tyler's explicit go-ahead in chat, then `--yes`.
 - With the Dex window covered, `jb` dispatches pointer input from the page and turns animations off, and says so. That is navigation evidence only: verify an interaction path by rerunning it with the window visible, since a later screenshot does not validate earlier page-dispatched input. `open` and `shot` can make Dex Work Chrome's last-used profile, which stalls Oracle's local runs until Tyler clicks a Dex Personal window.

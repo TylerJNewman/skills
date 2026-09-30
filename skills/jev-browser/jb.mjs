@@ -14,13 +14,14 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
   jb <tab> snap [--text] [regex]   print the controls (--text adds page text; regex keeps matching lines)
   jb <tab> click "<name>" ...      click each named control in order; each waits up to 10 s to appear
   jb <tab> type "<name>" "<text>"  replace the text in the one field with this exact name ("" = the focused field)
+  jb <tab> attach <file.pdf> --yes attach one local PDF to the Quantum full-chat composer
   jb <tab> press <key>             Enter, Escape, Tab, Shift+Tab, arrows, PageUp, PageDown, Home, End
   jb <tab> jev "<goal>" [--allow "<regex>"] [--steps N]
                                    Jev autopilot toward one observable goal, on an approved origin
   jb <tab> shot [file.png]         screenshot the viewport and print its path (brings the Dex window forward)
   jb <tab> close                   close the tab
 
-  --yes   after click, type, or press: Tyler approved this consequential action in chat.
+  --yes   after click, type, press, or attach: Tyler approved this consequential action in chat.
           On quantum.loan it unlocks chat input only; identity and target checks still apply.
 
 <tab> is the id jb printed, or any unique prefix. jb drives only tabs it opened and tabs those opened.
@@ -447,6 +448,14 @@ async function main([first, verb, ...rest]) {
       const settled = await tab.type(entry.index, text);
       note(tab, settled);
       console.log(diff(state, await tab.getAXState(), tab.url));
+    } else if (verb === 'attach') {
+      const [path, ...flags] = rest;
+      if (!path || flags.some((flag) => flag !== '--yes')) throw new Error('usage: jb <tab> attach <absolute-file.pdf> --yes');
+      guard(tab, flags.includes('--yes'));
+      const { state, entry } = await find(tab, 'Attach file', (role) => role === 'button');
+      const settled = await tab.attachPdf(entry.index, path);
+      note(tab, settled);
+      console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'press') {
       const [key, ...flags] = rest;
       guard(tab, flags.includes('--yes'));
@@ -470,7 +479,7 @@ async function main([first, verb, ...rest]) {
     }
   } finally {
     // Whatever happened, any tab this command caused is owned and reported, never left behind silently.
-    if (['click', 'type', 'press', 'jev'].includes(verb)) {
+    if (['click', 'type', 'press', 'attach', 'jev'].includes(verb)) {
       await adoptChildren(parent, tab, tab.windowOpens.splice(0)).catch((error) => console.log(`(could not check for new tabs: ${error.message})`));
     }
     tab.close();

@@ -6,7 +6,8 @@
 // actions and Jev's actions meet the same check at the moment of dispatch.
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { statSync, writeFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { browser, connect, endpoint } from './cdp.mjs';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -414,6 +415,27 @@ export async function attachTab(targetId, { connection } = {}) {
       await c.send('Input.insertText', { text });
       tab.inputs.add('trusted');
       return settle(600); // search boxes debounce before they fetch
+    },
+
+    // Select through Chrome's file-input API; the app still owns validation and its upload handler.
+    async attachPdf(index, path) {
+      if (!isAbsolute(path) || !/\.pdf$/i.test(path) || !statSync(path).isFile()) throw new Error('attach requires one existing absolute PDF file path');
+      await syncStill();
+      await tab.authorize?.({ verb: 'click', index }); // same authorization as the named Attach file button
+      const { result, exceptionDetails } = await c.send('Runtime.callFunctionOn', {
+        objectId: await objectOf(index),
+        functionDeclaration: `function () {
+          const composer = this.closest('[data-chat-composer-dropzone="true"]');
+          if (location.origin !== 'https://quantum.loan' || !composer || this.getAttribute('aria-label') !== 'Attach file' || this.disabled || this.closest('[inert]')) throw new Error('attach supports only the enabled Quantum full-chat Attach file control');
+          const inputs = composer.querySelectorAll('input[type="file"]');
+          if (inputs.length !== 1 || inputs[0].disabled || inputs[0].closest('[inert]') || !/(\\.pdf|application\\/pdf)/i.test(inputs[0].accept)) throw new Error('the chat PDF input is missing, ambiguous, or disabled');
+          return inputs[0];
+        }`,
+      });
+      if (exceptionDetails || !result.objectId) throw new Error(exceptionDetails?.exception?.description ?? 'the chat PDF input is unavailable');
+      tab.lastCheck();
+      await c.send('DOM.setFileInputFiles', { objectId: result.objectId, files: [path] });
+      return settle();
     },
 
     // A screenshot needs a rendered tab, so this brings the Dex window forward and restores animations.
