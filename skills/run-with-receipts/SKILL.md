@@ -5,11 +5,11 @@ description: "Receipts for work that repeats, writes, or claims a result. Use on
 
 # Run with receipts
 
-A receipt is an artifact that someone other than the actor owns. Five run-time patterns, then a procedure for proving a change.
+A receipt records an observable result; an independent check decides whether it proves the claim. Use these five run-time patterns.
 
 ## Run-time patterns
 
-**Freeze what passed once.** Cue: the second item of a task that worked on the first ("do the same for the rest", "for each", "batch"). Move the changing values into data, hash the procedure, bind the passing check to that hash, and run every remaining item from those bytes. A changed byte voids the receipt: re-freeze and rerun every case. Prevents re-deciding each step and running an unvalidated edit.
+**Freeze what passed once.** Cue: the second item of a task that worked on the first ("do the same for the rest", "for each", "batch"). Move the changing values into data, hash the procedure, bind the passing check to that hash, and run every remaining item from those bytes. A changed procedure needs a new digest and the required checks for that exact version. Prevents re-deciding each step and running an unvalidated edit.
 
 **Preflight before the first write.** Cue: a procedure about to write to an account, record, or environment ("send it"). Assert origin, account, and state deterministically; on mismatch, stop before the first edit, report expected versus observed, and hand back to reasoning. Prevents right steps on the wrong target, such as a work send from the personal account.
 
@@ -21,25 +21,9 @@ A receipt is an artifact that someone other than the actor owns. Five run-time p
 
 ## Prove a change
 
-Cue: "make this reusable and prove it", "prove it's faster". Each step ends on its exit artifact.
+Use the single procedure in [frame-loop](/Users/tyler/.codex/skills/frame-loop/SKILL.md): name the real outcome and budget, demonstrate a discriminating baseline/control, run one bounded change under frozen checks, then independently accept and read back the authorized version through its consumer. Ordinary reversible edits need only their focused checks and Git; repeated subjective comparisons use its [evaluation and promotion](/Users/tyler/.codex/skills/frame-loop/references/evaluation-and-promotion.md), and multiple Git candidates use its [ratchet](/Users/tyler/.codex/skills/frame-loop/references/ratchet.md).
 
-1. Draft the assignment (smallest change, hard blockers, draft rubric, fixture test) and get an outside critique through `oracle-packx` once the user authorizes sending the code out. Exit: draft rubric and written critique.
-2. Fold each critique point into a v2 rubric as a number, definition, or dropped row; run a second review round; give each independent piece a subagent (cost audit, fixture, measurement, red-team with the old approach, docs). Exit: every subagent report and the second critique.
-3. Reconcile into v3 and build the grader-owned harness: logging shim, launcher running hashed bytes, held-out inputs, fault injection. Exit: every rubric row names an observable artifact and the harness runs against the unchanged approach.
-4. Measure the baseline on the same fixture with the same checks before writing the change. Exit: grader-produced baseline log and counts.
-5. Implement the smallest change, freeze it with a receipt bound to its digest, run every case, and sort each failure: subject bug means re-freeze and rerun all, grader bug means fix the harness and rerun the affected cases. Exit: every case ran on the final digest and every row has a score with its artifact.
-6. Test discovery cold in fresh sessions: docs, task, and held-out input only, plus a near-miss task to decline. Exit: transcripts show finding, using, and declining.
-7. Write the handoff: scores with artifacts, test command, baseline versus result, smallest change, unresolved items (rows scored 2 with a known gap). Exit: another agent can repeat the test from the file list.
-8. Commit the subject change alone when the user asks. Exit: the hash sits in the handoff.
-
-For rubric design, independent grading, evaluator boundaries, and Goodhart checks, read `/Users/tyler/.codex/skills/frame-loop/references/evaluation-and-promotion.md`. For Git candidates use its `references/ratchet.md`. The old disabled autoresearch-targets plugin is historical source, not the active workflow.
-
-Decision rules:
-- The grader owns the scorecard, logs, held-out inputs, and counts; missing evidence scores unmeasured.
-- Baseline before implementation, same fixture, same checks; a number from another task is context.
-- Any subject change gets a new digest and receipt, and every case reruns on it.
-- The coordinator's transcript is the decision count: every tool call and text turn between launch and terminal result, polling included.
-- Red-team the rubric with the old approach before implementing; each pass becomes a blocker, a bound, or a harness feature.
+Preserve failed/unknown results. A subject edit needs checks bound to its new digest. A grader, evidence or model change starts a new generation with a new baseline and comparable measurements of retained candidates; do not mix old scores with repaired checks. Count the coordinator's calls and polling in a like-for-like comparison. External reviews and bespoke harnesses are optional, not a required eight-step sequence. The old disabled autoresearch-targets plugin is historical source.
 
 ## Worked example
 
