@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { statSync, writeFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { browser, connect, endpoint } from './cdp.mjs';
+import { researchControl } from './research-grid.mjs';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const DEX = '/Users/tyler/.oracle/browser-profile';
@@ -18,7 +19,7 @@ const ROLE = {
   combobox: 'combo box', StaticText: 'text', toggleButton: 'toggle button',
 };
 const CONTROLS = new Set(['button', 'toggleButton', 'link', 'tab', 'checkbox', 'radio', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
-  'switch', 'combobox', 'textbox', 'searchbox', 'option', 'treeitem', 'slider', 'spinbutton']);
+  'switch', 'combobox', 'textbox', 'searchbox', 'option', 'treeitem', 'slider', 'spinbutton', 'columnheader']);
 const NAMED = new Set(['heading', 'dialog', 'alertdialog', 'alert', 'status']);
 const STATES = ['focused', 'selected', 'expanded', 'checked', 'pressed', 'disabled'];
 const BUDGET = 22000; // bridge.mjs rejects snapshots over 24000 chars
@@ -69,7 +70,8 @@ const RELATION = `function () {
   const inResults = !!(d && list && this.getAttribute('role') === 'option' && [...d.querySelectorAll('[role="combobox"]')].some((i) => listOf(i) === list));
   const resultSelected = searchInput && !!own.querySelector('[role="option"][aria-selected="true"]');
   const chatComposer = !!this.closest('[data-chat-composer-dropzone="true"]');
-  return { searchInput, inResults, resultSelected, chatComposer };
+  const researchGrid = (${researchControl.toString()}).call(this);
+  return { searchInput, inResults, resultSelected, chatComposer, researchGrid };
 }`;
 const FINGERPRINT = '`${location.href}|${document.getElementsByTagName("*").length}|${document.body?.textContent.length}`';
 export const POPUP = 'the page opened, or asked to open, a new tab, so jb stopped on this one; it prints the new tab once it appears';
@@ -374,12 +376,14 @@ export async function attachTab(targetId, { connection } = {}) {
     // Keyboard input is trusted in hidden tabs too.
     async pressKey(_element, name) {
       const shift = name === 'Shift+Tab';
-      const spec = KEYS[shift ? 'Tab' : name];
+      const ctrl = name === 'Ctrl+Enter';
+      const spec = KEYS[shift ? 'Tab' : ctrl ? 'Enter' : name];
       if (!spec) throw new Error(`unsupported key ${name}`);
       await syncStill();
       await tab.authorize?.({ verb: 'press', key: name });
-      const [code, key, text] = spec;
-      const base = { key, code: key, windowsVirtualKeyCode: code, modifiers: shift ? 8 : 0 };
+      const [code, key, character] = spec;
+      const text = ctrl ? undefined : character;
+      const base = { key, code: key, windowsVirtualKeyCode: code, modifiers: shift ? 8 : ctrl ? 2 : 0 };
       tab.lastCheck();
       await c.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text ? { text } : {}) });
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });

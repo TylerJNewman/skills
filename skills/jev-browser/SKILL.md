@@ -9,7 +9,7 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 
 ## Fly a task
 
-1. **Choose the route.** Dex Work tasks go through `jb`. Localhost dev servers use the in-app browser preview tools with a minted session (`apps/quantum/CLAUDE.md`), except the isolated `jb` integration fixture at `http://jb-fixture.localhost:4173`, including its declared wrong-origin alias, which `jb` drives; other localhost servers keep that route. Oracle keeps its own route. Dex Personal stays closed to agents, including for recovery.
+1. **Choose the route.** Dex Work tasks go through `jb`. Localhost dev servers use the in-app browser preview tools with a minted session (`apps/quantum/CLAUDE.md`), except the isolated `jb` integration fixture at `http://jb-fixture.localhost:4173`, including its declared wrong-origin alias, and the Research fixture at `http://jb-fixture.localhost:4174/research`, which `jb` drives; other localhost servers keep that route. Oracle keeps its own route. Dex Personal stays closed to agents, including for recovery.
 2. **Reuse a saved runner** before you explore a form: `grep -rlF "# jb-run origin=<origin> " runs/` in this skill's folder (the trailing space is part of the header). Read the header of each hit; when its `entry` and `account` fit your task, write the items as a JSON list of `{request_id, name, amount}` strings and, when this batch's consequential clicks are authorized by the task, launch it once: `python3 -I runs/<host>/<workflow>/run.py <items.json> --yes`. Skip to Close. The runner opens, verifies, and closes its own tabs, so read its result JSON against your request. Exit 2 (applicability stop) and 3 (uncertain write) hand the task back to you: read the reason line and resume reasoning from the printed state. After 3 never Create again until a readback shows whether the record exists. With no hit, continue.
 3. **Open** with `jb open <url>` and note the tab id. On quantum.loan, `jb` prints `signed in as tnewman@quantafinance.com`, and re-checks that account, the app shell, and the address before every action and before every page goes to Jev. When it prints `NOT VERIFIED`, use the identity-recovery row below before requesting sign-in; keep the same owned Work tab and its guards.
 4. **Name the landing** before acting: the record, the destination, the selected control, the loaded content, relevant errors, and any checkpoint the path itself must pass. Verify each checkpoint when you reach it; never chain across checkpoints that need their own evidence.
@@ -31,7 +31,9 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 | A form you have already scripted on this origin | A saved runner: step 2 |
 | An unfamiliar path on an approved origin | Autopilot: `jb <tab> jev "<one observable goal>"` |
 | A native file chooser opened by an authorized chat `Attach file` click | Bring that same verified, owned tab forward with `shot`, then use `cua_repl` only on the observed file chooser to choose the approved file. Return to `jb snap` to verify the attachment. |
-| A native dropdown, a frame, a drag | Not supported by `jb`: stop and tell Tyler |
+| Research grid paging, page size, text/number filters, operators, and sorting | Hand-fly the named controls in the reviewed Research grid; each action checks live grid ownership and DOM relationships. AG Grid page-size/operator selectors are supported; `press Ctrl+Enter` opens the focused sortable Research header's filter; business cells and saved-view controls remain blocked. |
+| Research grid semantic state or temporary view changes | `jb <tab> tools`, then `jb <tab> call research_grid_get_state '{}'` or `jb <tab> call research_grid_set_view '{"page":2}'`. Native WebMCP support is required; unsupported browsers fail explicitly. |
+| Other native dropdowns, a frame, a drag | Not supported by `jb`: stop and tell Tyler |
 | None of these, clearly | Snap and plan it yourself |
 
 When the page opens a new tab, or asks to, `jb` stops before its next action or Jev request on the original tab, which ends a click chain or an autopilot run, and prints `opened new tab <id>` for each tab that appeared, even between commands. Each is yours to verify, drive, and close.
@@ -55,7 +57,7 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 
 ## Boundaries
 
-- quantum.loan supports navigation, search, and authorized chat input. `Open chat` opens the loan drawer. For the actual chat composer, use `type "Message Quantum" "<text>" --yes` in the loan drawer or `type "Message composer" "<text>" --yes` on the full-page `/chat`, then `click "Send message" --yes`; `Attach file`, queued follow-ups, and stop generation use the same task authorization. `--yes` acknowledges authorization already present in the conversation; do not ask again for an approved task. Loan edits, deletion, and other business actions remain outside this gate.
+- quantum.loan supports navigation, search, reviewed Research grid view controls, and authorized chat input. `Open chat` opens the loan drawer. For the actual chat composer, use `type "Message Quantum" "<text>" --yes` in the loan drawer or `type "Message composer" "<text>" --yes` on the full-page `/chat`, then `click "Send message" --yes`; `Attach file`, queued follow-ups, and stop generation use the same task authorization. `--yes` acknowledges authorization already present in the conversation; do not ask again for an approved task. Loan edits, deletion, and other business actions remain outside this gate.
 - `attach` uses the same verified Work session and authorization as `Attach file`, selects only the full-chat composer's PDF input, and triggers the app's normal preview. It does not submit a message. On an uncertain upload, inspect the draft before retrying; upload success requires the preview filename and ready state, then a saved document/result after sending.
 - `cua_repl` is only for the file chooser an authorized chat `Attach file` click opens, in the same verified, owned Work tab; native tools do not create authority. After choosing the file, verify the filename and upload result before submitting the chat.
 - Elsewhere, use `--yes` for consequential clicks, toggles and value-changing keys already authorized by the task. Ask only when the target or scope remains materially unclear; a retry, technical warning or already-approved action does not require fresh approval.
@@ -63,3 +65,36 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 - `jb` touches only the tabs it opened and the tabs those opened.
 
 `jb --help` lists every verb and flag.
+
+
+## Research grid testing
+
+The reviewed surface is exactly `https://quantum.loan/leads/research`, with one
+`data-research-grid="true"` root containing AG Grid `grid-id="research-grid"`.
+The isolated Research fixture uses `http://jb-fixture.localhost:4174/research`. Tools and
+controls on another route, another grid, or an iframe do not inherit this scope.
+Every action retains the owned Dex Work tab and live account checks. Temporary
+paging, sorting and filtering are supported; editing rows, saving views, exports,
+and other business operations remain outside the grid capability.
+
+`tools` discovers only `research_grid_get_state` and `research_grid_set_view` from
+the top-level document. `call` accepts only those names, bounds the arguments,
+rechecks the descriptor before execution, and uses the native
+`document.modelContext.getTools()` / `executeTool(tool, args, {signal})` API.
+Neither tool annotations nor a tool from a child frame grants authority. No model
+request or customer-data transmission is involved. Do not enable flags, inject a
+polyfill, or use an app-private execution hook to turn an unsupported browser into
+a claimed native pass.
+
+The bounded smoke candidate is
+`runs/quantum.loan/research-grid/run.mjs <evidence-directory> [entry-url]`.
+It opens and closes its own tab, saves the original temporary view, checks sorting
+and rows beyond 1,000 through WebMCP, then clicks Next/Previous, page size, a sortable
+header and a text filter through real controls. It restores the original view and
+writes `result.json` and screenshots. It requires a visible Dex Work tab for UI
+checks and rejects page-dispatched hidden-tab input. Exit 0 means all assertions
+and cleanup passed; 2 means the required surface/API was unavailable before any
+view change; 1 means a check or cleanup failed. A fixture run proves only the
+fixture. Inspect screenshots separately before making a visual claim, and report
+native tool, real UI and visual evidence separately. The runner must pass its
+fixture and mismatch validation before being treated as a frozen reusable runner.

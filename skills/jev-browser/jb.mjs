@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as bridge from './bridge.mjs';
+import { callResearchTool, isResearchUrl, listResearchTools, researchActionAllowed } from './research-grid.mjs';
 import { attachTab, browserInstance, closeTarget, openedBy, openInDexWork, POPUP, targetInfo, within } from './tab.mjs';
 
 const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev autopilot.
@@ -14,8 +15,10 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
   jb <tab> snap [--text] [regex]   print the controls (--text adds page text; regex keeps matching lines)
   jb <tab> click "<name>" ...      click each named control in order; each waits up to 10 s to appear
   jb <tab> type "<name>" "<text>"  replace the text in the one field with this exact name ("" = the focused field)
+  jb <tab> tools                  list reviewed, top-level Research-grid WebMCP tools
+  jb <tab> call <tool> <json>      call one reviewed Research-grid tool with JSON arguments
   jb <tab> attach <file.pdf> --yes attach one local PDF to the Quantum full-chat composer
-  jb <tab> press <key>             Enter, Escape, Tab, Shift+Tab, arrows, PageUp, PageDown, Home, End
+  jb <tab> press <key>             Enter, Escape, Tab, Shift+Tab, arrows, PageUp, PageDown, Home, End; Ctrl+Enter opens a Research header filter
   jb <tab> jev "<goal>" [--allow "<regex>"] [--steps N]
                                    Jev autopilot toward one observable goal, on an approved origin
   jb <tab> shot [file.png]         screenshot the viewport and print its path (brings the Dex window forward)
@@ -54,7 +57,7 @@ const NOT_NAVIGATION = ['button', 'checkBox', 'checkbox', 'check box', 'radio bu
 const SAFE_KEYS = new Set(['Tab', 'Shift+Tab', 'Escape']); // move focus or close; never submit or change a value
 const ACTIVATABLE = new Set(['link', 'button', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'tab', 'treeitem', 'checkbox', 'radio', 'switch']);
 const NOT_CLICKABLE = new Set(['text', 'heading', 'dialog', 'alertdialog', 'alert', 'status']);
-const TYPEABLE = new Set(['text field', 'combo box']);
+const TYPEABLE = new Set(['text field', 'combo box', 'spinbutton']);
 const MAX_MS = 45000; // one autopilot run
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -90,7 +93,7 @@ const isDisabled = (m) => m.props.disabled === true || m.props.disabled === 'tru
  * Returns null, or { reason, hard }: a hard refusal cannot be overridden; a soft one needs Tyler's --yes.
  * Quantum permits navigation/search and explicitly approved chat-composer input.
  */
-export function verdictFor({ verb, meta, key, focused, quantum }) {
+export function verdictFor({ verb, meta, key, focused, quantum, href }) {
   const hard = (reason) => ({ reason, hard: true });
   const soft = (reason) => ({ reason, hard: false });
   const said = (m) => `"${m.name || '(no name)'}"`;
@@ -98,6 +101,8 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
     if (isDisabled(meta)) return hard(`${said(meta)} is disabled`);
     if (verb === 'click' && !meta.name) return hard('an unnamed control cannot be clicked by name; click a named one');
   }
+  if (researchActionAllowed({ verb, meta, key, focused, href })) return null;
+  if (key === 'Ctrl+Enter') return hard('Ctrl+Enter is supported only on a reviewed Research sortable header');
   if (quantum) {
     if (inChat(meta) && ((verb === 'type' && isChatField(meta)) ||
       (verb === 'click' && meta.role === 'button' && CHAT_INPUTS.has(meta.name))))
@@ -168,7 +173,11 @@ export function guard(tab, approved) {
     const href = await tab.evaluate('location.href');
     await preflight(tab, href);
     if (verb === 'scroll') return;
-    const quantum = originOf(href) === QUANTUM;
+    if (verb === 'research-tools') {
+      if (!isResearchUrl(href)) throw new Error('Research tools are only supported on the reviewed Research route');
+      return;
+    }
+    const quantum = originOf(href) === QUANTUM || isResearchUrl(href); // fixture Research uses the same restrictive action policy
     let meta;
     let focused;
     if (verb === 'press') {
@@ -178,7 +187,7 @@ export function guard(tab, approved) {
       const seen = tab.meta(index);
       if (!meta || meta.role !== seen.role || meta.name !== seen.name) throw new Error('the control changed since the snapshot, so nothing was done; snap again');
     }
-    const verdict = verdictFor({ verb, meta, key, focused, quantum });
+    const verdict = verdictFor({ verb, meta, key, focused, quantum, href });
     if (verdict && (verdict.hard || !approved)) {
       throw new Error(`${verdict.reason}. Nothing was done${verdict.hard ? '' : '; ask Tyler, then rerun with --yes'}`);
     }
@@ -209,7 +218,7 @@ const isOwned = (targetId) => existsSync(join(OWNED, `${targetId}.json`));
 const recordOf = (targetId) => JSON.parse(readFileSync(join(OWNED, `${targetId}.json`), 'utf8'));
 const disown = (targetId) => { try { unlinkSync(join(OWNED, `${targetId}.json`)); } catch {} };
 
-async function resolveTab(prefix) {
+export async function resolveTab(prefix) {
   const ids = ownedIds().filter((id) => id.startsWith(prefix));
   if (ids.length !== 1) throw new Error(ids.length ? `tab prefix ${prefix} is ambiguous` : `no tab ${prefix} from jb; jb open <url> first`);
   const [id] = ids;
@@ -420,6 +429,14 @@ async function main([first, verb, ...rest]) {
       const text = rest.includes('--text');
       const pattern = rest.find((a) => a !== '--text');
       console.log(view(await tab.getAXState(), { text, filter: pattern && new RegExp(pattern, 'i') }));
+    } else if (verb === 'tools') {
+      if (rest.length) throw new Error('usage: jb <tab> tools');
+      guard(tab, false);
+      console.log(JSON.stringify(await listResearchTools(tab), null, 2));
+    } else if (verb === 'call') {
+      if (rest.length !== 2) throw new Error('usage: jb <tab> call <reviewed-tool> <json-object>');
+      guard(tab, false);
+      console.log(JSON.stringify(await callResearchTool(tab, rest[0], JSON.parse(rest[1])), null, 2));
     } else if (verb === 'click') {
       guard(tab, rest.includes('--yes'));
       const names = rest.filter((a) => a !== '--yes');
@@ -479,7 +496,7 @@ async function main([first, verb, ...rest]) {
     }
   } finally {
     // Whatever happened, any tab this command caused is owned and reported, never left behind silently.
-    if (['click', 'type', 'press', 'attach', 'jev'].includes(verb)) {
+    if (['click', 'type', 'press', 'attach', 'jev', 'call', 'tools'].includes(verb)) {
       await adoptChildren(parent, tab, tab.windowOpens.splice(0)).catch((error) => console.log(`(could not check for new tabs: ${error.message})`));
     }
     tab.close();
