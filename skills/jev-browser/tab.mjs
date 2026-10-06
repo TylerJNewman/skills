@@ -139,6 +139,10 @@ export async function browserInstance() {
   return (await (await fetch(`${endpoint()}/json/version`, { signal: AbortSignal.timeout(15000) })).json()).webSocketDebuggerUrl.split('/').pop();
 }
 
+// The profiles jb may open tabs in. Dex Personal is deliberately absent. `dev` is the dev@quantafinance.com test account,
+// which Tyler approved on 2026-10-05 for sending test messages to his work account.
+export const PROFILES = { work: 'Default', dev: 'Profile 3' };
+
 /**
  * Open an inert tab in the Dex Work profile through Chrome's own profile routing
  * (--profile-directory=Default) and claim exactly that tab by its one-time address. The caller then
@@ -146,10 +150,12 @@ export async function browserInstance() {
  * instead, which can be Dex Personal. The inert page is this skill's blank.html, because Chrome turns
  * a command-line about:blank into its new-tab page.
  */
-export async function openInDexWork() {
+export async function openInDexWork(profile = 'work') {
+  const directory = PROFILES[profile];
+  if (!directory) throw new Error(`unknown profile "${profile}"; jb opens only: ${Object.keys(PROFILES).join(', ')}`);
   const blank = `${new URL('./blank.html', import.meta.url).href}#jb-${randomUUID()}`;
   return withBrowser(async (b) => {
-    execFileSync(CHROME, [`--user-data-dir=${DEX}`, '--profile-directory=Default', blank], { stdio: 'ignore', timeout: 15000 });
+    execFileSync(CHROME, [`--user-data-dir=${DEX}`, `--profile-directory=${directory}`, blank], { stdio: 'ignore', timeout: 15000 });
     for (const deadline = performance.now() + 15000; performance.now() < deadline; await sleep(100)) {
       const hits = (await b.send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page' && t.url === blank);
       if (hits.length > 1) throw new Error('more than one tab carries this open marker; refusing to guess');

@@ -61,5 +61,6 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 - Elsewhere, use `--yes` for consequential clicks, toggles and value-changing keys already authorized by the task. Ask only when the target or scope remains materially unclear; a retry, technical warning or already-approved action does not require fresh approval.
 - With the Dex window covered, `jb` dispatches pointer input from the page and turns animations off, and says so. That is navigation evidence only: verify an interaction path by rerunning it with the window visible, since a later screenshot does not validate earlier page-dispatched input.
 - `jb` touches only the tabs it opened and the tabs those opened.
+- `JB_PROFILE=dev jb open <url>` opens the tab in the test profile signed in as dev@quantafinance.com, for sending test messages to Tyler's work account. Verify the account in the first `snap` before typing. Every other command works on that tab as usual. Dex Personal stays closed.
 
 `jb --help` lists every verb and flag.

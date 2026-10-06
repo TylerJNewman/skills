@@ -10,6 +10,7 @@ import { attachTab, browserInstance, closeTarget, openedBy, openInDexWork, POPUP
 const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev autopilot.
 
   jb open <url>                    open a Dex Work tab; prints its id, sign-in, and the page's controls
+                                   JB_PROFILE=dev opens it in the dev@quantafinance.com test profile instead
   jb <tab> go <url>                load a URL in the tab
   jb <tab> snap [--text] [regex]   print the controls (--text adds page text; regex keeps matching lines)
   jb <tab> click "<name>" ...      click each named control in order; each waits up to 10 s to appear
@@ -370,7 +371,9 @@ async function main([first, verb, ...rest]) {
 
   if (first === 'open') {
     if (!/^https?:\/\//.test(verb ?? '')) throw new Error('usage: jb open <url>');
-    const { targetId, contextId, browser } = await openInDexWork();
+    const profile = process.env.JB_PROFILE || 'work';
+    const { targetId, contextId, browser } = await openInDexWork(profile);
+    if (profile !== 'work') console.log(`(profile: ${profile}, not Dex Work)`);
     let tab;
     try {
       own(targetId, { contextId, browser, url: verb });
