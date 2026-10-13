@@ -44,6 +44,8 @@ const ACCOUNT = 'tnewman@quantafinance.com';
 const SHELL = '[data-sidebar]'; // Quantum's app-shell sidebar parts (at least its trigger); absent on its sign-in page
 const SEARCH_DIALOG = 'Search Quantum';
 const SEARCH_BUTTON = /^Search\b.*⌘ ?K$/; // its label changes between releases ("Search everything... ⌘ K", "Search... ⌘ K")
+const SEARCH_RESULT_GROUP = /^(?:Loans|Loan Quotes|Borrowers|Contacts|Did you mean \(people\)|Choose a participant record for .*)$/s;
+const isSearchResult = (m) => SEARCH_RESULT_GROUP.test(m?.group ?? '');
 // Buttons on quantum.loan reviewed as navigation only: they open the sidebar, its menus, or the loan's section list.
 const QUANTUM_OPENERS = new Set(['Toggle Sidebar', 'Loan sections', 'Leads', 'Loans', 'Borrowers', 'Accounting', 'More', 'Admin', 'Developer', 'Open chat']);
 const CHAT_DIALOG = 'Chat'; // the chat drawer `Open chat` opens; its message box is named CHAT_COMPOSER
@@ -107,7 +109,7 @@ const isDisabled = (m) => m.props.disabled === true || m.props.disabled === 'tru
 /**
  * The execution check behind every click, type, and key press, hand-flown or Jev's. It decides on facts
  * read at dispatch time: `meta` for the target, `focused` for keys, each with Chrome's role, name, and
- * properties, its dialog's name, and its search relationship (searchInput, inResults, resultSelected).
+ * properties, its dialog's name, and its search relationship (searchInput, inResults, group).
  * Returns null, or { reason, hard }: a hard refusal cannot be overridden; a soft one needs Tyler's --yes.
  * Quantum permits navigation/search and explicitly approved chat-composer input.
  */
@@ -127,14 +129,15 @@ export function verdictFor({ verb, meta, key, focused, quantum }) {
       if (isToggle(meta) || CONSEQUENTIAL.test(meta.name)) return hard(`unsupported quantum.loan action: ${meta.role} ${said(meta)} could change data`);
       if (meta.role === 'tab' || meta.role === 'link') return null;
       if (meta.role === 'button' && (QUANTUM_OPENERS.has(meta.name) || SEARCH_BUTTON.test(meta.name))) return null;
-      if (meta.dialog === SEARCH_DIALOG && ((meta.role === 'option' && meta.inResults) || (meta.role === 'button' && meta.name === 'Close'))) return null;
-      return hard(`unsupported quantum.loan action: jb clicks only tabs, links, reviewed menu openers, the search palette, and chat input controls, not ${meta.role} ${said(meta)}`);
+      if (meta.dialog === SEARCH_DIALOG && ((meta.role === 'option' && meta.inResults && isSearchResult(meta)) || (meta.role === 'button' && meta.name === 'Close'))) return null;
+      return hard(`unsupported quantum.loan action: jb clicks only tabs, links, reviewed menu openers, search results, and chat input controls, not ${meta.role} ${said(meta)}`);
     }
     if (verb === 'type') return meta.dialog === SEARCH_DIALOG && meta.searchInput ? null : hard('unsupported quantum.loan action: jb types only into the search palette\'s own input or the chat composer');
     if (SAFE_KEYS.has(key)) return null;
     if (isChatField(focused)) return soft('Quantum chat input needs task authorization');
     if (!(focused?.dialog === SEARCH_DIALOG && focused.searchInput)) return hard(`unsupported quantum.loan action: ${key} goes only to the search palette's own input or the chat composer`);
-    return key === 'Enter' && !focused.resultSelected ? hard('no search result is selected; snap and check it first') : null;
+    if (key !== 'Enter' || isSearchResult(focused)) return null;
+    return hard(`${focused.group ? `the selected option is in the "${focused.group}" group, not a search result` : 'no search result is selected'}; press ArrowDown to reach one, then snap and check it`);
   }
   if (verb === 'click') {
     if (isToggle(meta)) return soft(`${said(meta)} is a ${meta.role}; flipping it changes a setting`);

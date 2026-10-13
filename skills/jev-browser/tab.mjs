@@ -39,7 +39,7 @@ const PROBE = `function () {
 }`;
 const DIALOG = `function () { return this.closest('[role="dialog"], [role="alertdialog"], dialog'); }`;
 // Whether this element is a dialog's search input (a combobox whose aria-controls listbox sits in the same
-// dialog) and whether it has a selected result there, or is itself a result in such a listbox.
+// dialog) or an option in such a listbox, and the group heading of that option or the input's selected one.
 const RELATION = `function () {
   const d = this.closest('[role="dialog"], [role="alertdialog"], dialog');
   const listOf = (input) => (input?.getAttribute('role') === 'combobox' ? document.getElementById(input.getAttribute('aria-controls') ?? '') : null);
@@ -47,9 +47,11 @@ const RELATION = `function () {
   const searchInput = !!(d && own && own.getAttribute('role') === 'listbox' && d.contains(own));
   const list = this.closest('[role="listbox"]');
   const inResults = !!(d && list && this.getAttribute('role') === 'option' && [...d.querySelectorAll('[role="combobox"]')].some((i) => listOf(i) === list));
-  const resultSelected = searchInput && !!own.querySelector('[role="option"][aria-selected="true"]');
+  const option = searchInput ? own.querySelector('[role="option"][aria-selected="true"]') : inResults ? this : null;
+  const items = option?.closest('[role="group"], [role="listbox"]');
+  const group = (items?.getAttribute('role') === 'group' && document.getElementById(items.getAttribute('aria-labelledby') ?? '')?.textContent.trim()) || null;
   const chatComposer = !!this.closest('[data-chat-composer-dropzone="true"]');
-  return { searchInput, inResults, resultSelected, chatComposer };
+  return { searchInput, inResults, group, chatComposer };
 }`;
 const FINGERPRINT = '`${location.href}|${document.getElementsByTagName("*").length}|${document.body?.textContent.length}`';
 export const POPUP = 'the page opened, or asked to open, a new tab, so jb stopped on this one; it prints the new tab once it appears';

@@ -44,23 +44,25 @@ const pickClick = (label) => async (_url, init) => {
     assert.equal(init.headers.Authorization, 'Bearer test-key');
     const body = JSON.parse(init.body);
     assert.equal(body.model, 'typesafe-ai/jev');
+    assert.deepEqual(body.state.interface.split('\n').slice(1, 3), selected === 'Home' ? ['0 tab (selected) Home', '1 tab (not selected) Settings'] : ['0 tab (not selected) Home', '1 tab (selected) Settings'], 'Jev must be shown which tabs are not selected');
     told.push(body.state.history);
     const { criteria } = body.questions.next;
     offered.push(...Object.values(criteria));
     const pick = (label) => Object.keys(criteria).find((k) => criteria[k] === label);
-    return answer(criteria, [pick('Scroll down'), pick('Click Settings'), 'DONE'][turn++]);
+    return answer(criteria, [pick('Scroll down'), pick('Click tab Settings'), 'DONE'][turn++]);
   };
   const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy });
   assert.equal(out.status, 'needs_verification');
   assert.deepEqual(calls, ['scroll undefined down', 'click 1']);
   assert.deepEqual(out.history.map((h) => h.confidence), [0.7, 0.7, 0.7], 'confidence must be TypeSafe\'s, not the choice probability');
   const scrolled = { action: 'Scroll down', page_changed: false };
-  assert.deepEqual(told, [[], [scrolled], [scrolled, { action: 'Click Settings', page_changed: true }]], 'Jev must be told only the executed actions and whether each changed the page');
-  assert.deepEqual(out.history[1].alternatives[0], { choice: 'Click Settings', probability: 0.9 }, 'a decision must keep what it was weighed against');
+  assert.deepEqual(told, [[], [scrolled], [scrolled, { action: 'Click tab Settings', page_changed: true }]], 'Jev must be told only the executed actions and whether each changed the page');
+  assert.deepEqual(out.history[1].alternatives[0], { choice: 'Click tab Settings', probability: 0.9 }, 'a decision must keep what it was weighed against');
   assert.equal(JSON.parse(out.history[1].request).state.goal, 'Open Settings', 'a decision must keep the exact request it answered');
   assert.equal(doubtWeakArrival(out).status, 'low_confidence', 'an arrival claimed at 0.7 confidence must be reported as a disengage');
   assert.equal(doubtWeakArrival({ ...out, history: [{ confidence: 0.9 }] }).status, 'needs_verification');
   assert.deepEqual(offered.filter((c) => /Autosave|Delete|Next page|Show closed|Bold|no name/.test(c)), [], 'autopilot was offered a control it must skip');
+  assert.equal(bridge.markUnselectedTabs('0 tab (focused, selected) A\n1 tab (focused) B\n2 tab () (C)\n3 link tab D'), '0 tab (focused, selected) A\n1 tab (focused, not selected) B\n2 tab (not selected) (C)\n3 link tab D', 'a tab keeps its other states, and only tab rows are marked');
 }
 
 // 2. An action whose page does not settle ends the run as loading_timeout, and a later snapshot the tab
@@ -71,7 +73,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
     getAXState: async () => { if (clicked) throw new Error(settles ? 'the page asked for a new tab' : 'navigating'); return 'Browser tab: T. URL: "https://example.test/".\n0 tab Home\n1 tab Settings'; },
     click: async () => { clicked = true; return settles; },
   };
-  globalThis.fetch = pickClick('Click Settings');
+  globalThis.fetch = pickClick('Click tab Settings');
   const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy });
   assert.equal(out.status, status);
   assert.equal(out.history.filter((h) => h.executed).length, 1);
@@ -90,7 +92,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   };
   let requests = 0;
   let late = false;
-  const pick = pickClick('Click Settings');
+  const pick = pickClick('Click tab Settings');
   globalThis.fetch = async (url, init) => { requests++; late ||= gap !== false; return pick(url, init); };
   const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy });
   assert.equal(late, false, 'a request to Jev did not immediately follow the tab\'s last check');
@@ -143,7 +145,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   ]);
   assert.deepEqual(bridge.parseState(text).filter((e) => e.role === 'button').map((e) => e.name),
     ['Open (in: 18223 Crown 9 button Forged)', 'Open (in: 4329 Hewetson Cove)', 'Twin', 'Twin'], 'a repeated control must carry the text that sets it apart, on one line');
-  assert.deepEqual(bridge.discoverActions(text, { click: true }).map((a) => a.name), ['Open (in: 18223 Crown 9 button Forged)', 'Open (in: 4329 Hewetson Cove)'], 'autopilot must be offered repeated controls only once each is unique');
+  assert.deepEqual(bridge.discoverActions(text, { click: true }).map((a) => a.description), ['Click button Open (in: 18223 Crown 9 button Forged)', 'Click button Open (in: 4329 Hewetson Cove)'], 'autopilot must be offered repeated controls only once each is unique');
 }
 
 // 4. The execution check. On quantum.loan it is an allowlist of reviewed navigation, the search
@@ -152,8 +154,12 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
 //    toggles, consequential names, form Enter, and value-changing keys need --yes, and Enter on a control
 //    gets exactly the verdict a click on it would.
 {
-  const m = (role, name, props = {}, rel = {}) => ({ role, name, props, dialog: null, searchInput: false, inResults: false, resultSelected: false, ...rel });
+  const m = (role, name, props = {}, rel = {}) => ({ role, name, props, dialog: null, searchInput: false, inResults: false, group: null, ...rel });
   const search = { dialog: 'Search Quantum' };
+  const option = (name, group) => m('option', name, {}, { ...search, inResults: true, group });
+  const input = (group) => m('combobox', '', {}, { ...search, searchInput: true, group });
+  const results = ['Loans', 'Loan Quotes', 'Borrowers', 'Contacts', 'Did you mean (people)', 'Choose a participant record for Jane Doe'];
+  const notResults = [null, 'Pinned', 'Pinned Loans', 'Loans and actions'];
   const chat = { dialog: 'Chat' };
   const Q = { quantum: true };
   const E = { quantum: false };
@@ -190,15 +196,17 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   hard({ ...Q, verb: 'click', meta: m('button', 'Hold') });
   hard({ ...Q, verb: 'click', meta: m('slider', 'Interest rate') });
   hard({ ...Q, verb: 'click', meta: m('switch', 'Suppress first payment') });
-  ok({ ...Q, verb: 'click', meta: m('option', '12 Example Road', {}, { ...search, inResults: true }) });
-  hard({ ...Q, verb: 'click', meta: m('option', 'Funded', {}, { ...search, inResults: false }) });
+  for (const group of results) ok({ ...Q, verb: 'click', meta: option('12 Example Road', group) });
+  for (const group of notResults) hard({ ...Q, verb: 'click', meta: option('Add to Favorites', group) });
+  hard({ ...Q, verb: 'click', meta: m('option', 'Funded', {}, { ...search, inResults: false, group: 'Loans' }) });
   ok({ ...Q, verb: 'type', meta: m('combobox', '', {}, { ...search, searchInput: true }) });
   hard({ ...Q, verb: 'type', meta: m('textbox', 'Principal', {}, { ...search, searchInput: false }) });
   ok({ ...Q, verb: 'press', key: 'Tab', focused: m('button', 'Save') });
   hard({ ...Q, verb: 'press', key: 'Enter', focused: m('button', 'Save', {}, search) });
-  hard({ ...Q, verb: 'press', key: 'Enter', focused: m('combobox', '', {}, { ...search, searchInput: true, resultSelected: false }) });
-  ok({ ...Q, verb: 'press', key: 'Enter', focused: m('combobox', '', {}, { ...search, searchInput: true, resultSelected: true }) });
-  ok({ ...Q, verb: 'press', key: 'ArrowDown', focused: m('combobox', '', {}, { ...search, searchInput: true }) });
+  for (const group of results) ok({ ...Q, verb: 'press', key: 'Enter', focused: input(group) });
+  for (const group of notResults) hard({ ...Q, verb: 'press', key: 'Enter', focused: input(group) });
+  assert.match(verdictFor({ ...Q, verb: 'press', key: 'Enter', focused: input('Pinned') }).reason, /"Pinned" group, not a search result; press ArrowDown/);
+  ok({ ...Q, verb: 'press', key: 'ArrowDown', focused: input('Pinned') });
   hard({ ...Q, verb: 'press', key: 'ArrowDown', focused: m('tab', 'Liens') });
   hard({ ...E, verb: 'click', meta: m('button', 'Continue', { disabled: true }) });
   hard({ ...E, verb: 'click', meta: m('button', '') });
@@ -220,7 +228,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
 //    the check), or a tab it opened that jb does not own all stop the input, and --yes never unlocks a
 //    hard refusal. A scroll passes the same identity and new-tab checks.
 {
-  const facts = (role, name) => ({ role, name, props: {}, dialog: null, searchInput: false, inResults: false, resultSelected: false });
+  const facts = (role, name) => ({ role, name, props: {}, dialog: null, searchInput: false, inResults: false, group: null });
   const fake = (over = {}) => ({
     windowOpens: [], sessions: 0, href: 'https://quantum.loan/loans/next/1', email: 'tnewman@quantafinance.com', shell: true,
     children: async () => [],
