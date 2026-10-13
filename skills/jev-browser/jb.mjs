@@ -233,8 +233,9 @@ const recordOf = (targetId) => JSON.parse(readFileSync(join(OWNED, `${targetId}.
 const disown = (targetId) => { try { unlinkSync(join(OWNED, `${targetId}.json`)); } catch {} };
 
 async function forgetClosedTabs() {
+  const ownedBeforeLooking = ownedIds();
   const open = await openTargetIds();
-  for (const id of ownedIds()) if (!open.has(id)) disown(id);
+  for (const id of ownedBeforeLooking) if (!open.has(id)) disown(id);
 }
 
 async function gatewayKey() {

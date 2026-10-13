@@ -420,11 +420,15 @@ export async function attachTab(targetId, { connection } = {}) {
     },
 
     async screenshot(path, { front = false } = {}) {
-      const capture = async () => writeFileSync(path, Buffer.from((await c.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
-      if (!front && await within(3000, capture(), 'the capture').then(() => true, () => false)) return false;
-      await c.send('Page.bringToFront');
-      await capture();
-      return true;
+      const capture = () => c.send('Page.captureScreenshot', { format: 'png' });
+      let shot = front ? null : await within(3000, capture(), 'the capture').catch(() => null);
+      const raised = !shot;
+      if (raised) {
+        await c.send('Page.bringToFront');
+        shot = await capture();
+      }
+      writeFileSync(path, Buffer.from(shot.data, 'base64'));
+      return raised;
     },
   };
 
