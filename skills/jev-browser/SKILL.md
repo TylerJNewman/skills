@@ -30,7 +30,7 @@ description: "Browser work in Dex Work Chrome tabs the agent opens with `jb`: de
 | Controls you have already seen, each with a unique name | Hand-fly: `jb <tab> click "A" "B"` with each name exactly as `snap` prints it; each waits up to 10 s to appear, so one call crosses page changes |
 | A form you have already scripted on this origin | A saved runner: step 2 |
 | An unfamiliar path on an approved origin | Autopilot: `jb <tab> jev "<one observable goal>"` |
-| A native file chooser opened by an authorized chat `Attach file` click | Bring that same verified, owned tab forward with `shot`, then use `cua_repl` only on the observed file chooser to choose the approved file. Return to `jb snap` to verify the attachment. |
+| A native file chooser opened by an authorized chat `Attach file` click | Bring that same verified, owned tab forward with `shot --front`, then use `cua_repl` only on the observed file chooser to choose the approved file. Return to `jb snap` to verify the attachment. |
 | A native dropdown, a frame, a drag | Not supported by `jb`: stop and tell Tyler |
 | None of these, clearly | Snap and plan it yourself |
 
@@ -38,7 +38,7 @@ When the page opens a new tab, or asks to, `jb` stops before its next action or 
 
 A profile label, plan/upgrade page or Google chooser is not proof of the site's signed-in identity. Recovery uses existing authorized Work sessions; it does not change accounts, open Dex Personal or weaken `jb` guards.
 
-Autopilot runs only on origins Tyler approved in `~/.config/jev-browser/origins`, and only on the origin a run starts from. Each decision sends Jev the whole snapshot, the goal, and the run's history through Vercel AI Gateway; `--allow "<regex>"` narrows what it may click but redacts nothing. Keep mail, sign-in pages, and borrower lists hand-flown. Autopilot clicks only enabled, named, unique controls, never types, and skips toggles and consequential names such as save, send, delete, approve, fund, and sign; on quantum.loan it clicks only tabs and links.
+Autopilot runs only on origins Tyler approved in `~/.config/jev-browser/origins`, and only on the origin a run starts from. Each decision sends Jev the snapshot, minus the values of fields `jb` can type into, the goal, and the run's last ten actions through Vercel AI Gateway; `--allow "<regex>"` narrows what it may click but redacts nothing more. Keep mail, sign-in pages, and borrower lists hand-flown. Autopilot clicks only enabled, named, unique controls, never types, and skips toggles and consequential names such as save, send, delete, approve, fund, and sign; on quantum.loan it clicks only tabs and links.
 
 A runner is a frozen script that hand-flies a repeated form. Freeze one only after the candidate itself has created and read back one item on a fixture or a scratch record and rejected one mismatch (wrong account, origin, or form state). Save it at `runs/<origin-host>/<workflow>/run.py` in this skill's folder. Line 1 is the header `# jb-run origin=<origin> entry=<path glob> account=<marker>`, for example:
 
@@ -51,7 +51,7 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 
 - A loan is `https://quantum.loan/loans/next/<id>` and opens on Funding Overview. Its other overview tabs are `?tab=<slug>`, for example `status`, `loan-fees`, `escrow-title`, `valuation`, `liens`; clicking a tab shows its slug in the URL.
 - Loan sections are paths under the loan: `/loan-documents` (sub-tab `/loan-documents/templates`), `/asset`, `/insurance`.
-- To find a loan without its id: click the search button (named like `Search... ⌘ K`; take its exact name from `snap`), `jb <tab> type "" "<LID, address, or borrower>"`, then check in the output that the `(selected)` option is the loan you mean before `jb <tab> press Enter`. The result opens in a new tab, which Chrome blocks while the Dex window is covered: if no new tab appears, `jb <tab> shot` brings the window forward, then press Enter again. Verify the new tab's record, then close both tabs when done.
+- To find a loan without its id: click the search button (named like `Search... ⌘ K`; take its exact name from `snap`), `jb <tab> type "" "<LID, address, or borrower>"`, then check in the output that the `(selected)` option is the loan you mean before `jb <tab> press Enter`; when another option such as `Add to Favorites` is selected, `jb <tab> press ArrowDown` moves to the result first. The result opens in a new tab. Verify the new tab's record, then close both tabs when done.
 
 ## Boundaries
 
@@ -59,7 +59,7 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 - `attach` uses the same verified Work session and authorization as `Attach file`, selects only the full-chat composer's PDF input, and triggers the app's normal preview. It does not submit a message. On an uncertain upload, inspect the draft before retrying; upload success requires the preview filename and ready state, then a saved document/result after sending.
 - `cua_repl` is only for the file chooser an authorized chat `Attach file` click opens, in the same verified, owned Work tab; native tools do not create authority. After choosing the file, verify the filename and upload result before submitting the chat.
 - Elsewhere, use `--yes` for consequential clicks, toggles and value-changing keys already authorized by the task. Ask only when the target or scope remains materially unclear; a retry, technical warning or already-approved action does not require fresh approval.
-- With the Dex window covered, `jb` dispatches pointer input from the page and turns animations off, and says so. That is navigation evidence only: verify an interaction path by rerunning it with the window visible, since a later screenshot does not validate earlier page-dispatched input.
+- `jb` keeps its tab rendering and sends real pointer and key input whether or not the Dex window is covered, and `shot` captures the tab without raising the window. Use `shot --front` only when the window itself must be on screen, such as for a native file chooser.
 - `jb` touches only the tabs it opened and the tabs those opened.
 - `JB_PROFILE=dev jb open <url>` opens the tab in the test profile signed in as dev@quantafinance.com, for sending test messages to Tyler's work account. Verify the account in the first `snap` before typing. Every other command works on that tab as usual. Dex Personal stays closed.
 

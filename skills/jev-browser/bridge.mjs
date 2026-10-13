@@ -85,6 +85,8 @@ export function discoverActions(state, policy={}) {
   return actions;
 }
 
+const recentActions = history => history.filter(entry => entry.executed).slice(-10).map(entry => ({action:entry.action,page_changed:!(entry.noEffect || entry.effectNeedsVisualVerification)}));
+
 function result(status,history,state,startedAt,details={}) {
   return {status,history,state,elapsedMs:Math.round(performance.now()-startedAt),...details};
 }
@@ -107,7 +109,7 @@ export async function run(tab,{goal,policy,envFile,allowedOrigins,maxSteps=10,mi
       const decisionStartedAt = performance.now();
       tab.lastCheck?.();
       try {
-        decision = await decide({key,goal,state,actions,history,timeoutMs:Math.max(1,Math.min(decisionTimeoutMs,Math.floor(maxMs-(performance.now()-startedAt))))});
+        decision = await decide({key,goal,state,actions,history:recentActions(history),timeoutMs:Math.max(1,Math.min(decisionTimeoutMs,Math.floor(maxMs-(performance.now()-startedAt))))});
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Decision failed';
         const canRetry = /transport failure or timeout/.test(message) && decisionRetries < maxDecisionRetries && maxMs-(performance.now()-startedAt) >= 1000;
