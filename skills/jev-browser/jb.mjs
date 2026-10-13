@@ -19,7 +19,8 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
   jb <tab> press <key>             Enter, Escape, Tab, Shift+Tab, arrows, PageUp, PageDown, Home, End
   jb <tab> jev "<goal>" [--allow "<regex>"] [--steps N]
                                    Jev autopilot toward one observable goal, on an approved origin
-  jb <tab> shot [file.png]         screenshot the viewport and print its path (brings the Dex window forward)
+  jb <tab> shot [file.png] [--front]
+                                   screenshot the viewport and print its path; --front also brings the Dex window forward
   jb <tab> close                   close the tab
 
   --yes   after click, type, press, or attach: Tyler approved this consequential action in chat.
@@ -56,6 +57,20 @@ const SAFE_KEYS = new Set(['Tab', 'Shift+Tab', 'Escape']); // move focus or clos
 const ACTIVATABLE = new Set(['link', 'button', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'tab', 'treeitem', 'checkbox', 'radio', 'switch']);
 const NOT_CLICKABLE = new Set(['text', 'heading', 'dialog', 'alertdialog', 'alert', 'status']);
 const TYPEABLE = new Set(['text field', 'combo box']);
+const TYPED_VALUE = new RegExp(`^(\\d+ (?:${[...TYPEABLE].join('|')})(?: \\([^)]*\\))? .*?), Value: .*$`, 'gm');
+const withoutTypedValues = (state) => state.replace(TYPED_VALUE, '$1');
+const SCROLL_ROOM = `(() => {
+  const wheelScrolls = (e) => (e === document.scrollingElement
+    ? ![e, document.body].some((x) => x && /hidden|clip/.test(getComputedStyle(x).overflowY))
+    : /auto|scroll|overlay/.test(getComputedStyle(e).overflowY));
+  const room = new Set();
+  for (let e = document.elementFromPoint(innerWidth / 2, innerHeight / 2); e; e = e.parentElement) {
+    if (!wheelScrolls(e)) continue;
+    if (e.scrollTop + e.clientHeight < e.scrollHeight - 1) room.add('down');
+    if (e.scrollTop > 0) room.add('up');
+  }
+  return ['down', 'up'].filter((direction) => room.has(direction));
+})()`;
 const MAX_MS = 45000; // one autopilot run
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -311,12 +326,13 @@ async function fresh(tab) {
  * snapshot is read and preflighted within the run's time, or not released at all; and after the
  * deadline no input starts and no request goes to Jev (bridge.mjs calls the tab's lastCheck).
  */
-export function pilotOf(tab, deadline) {
+export function pilotOf(tab, deadline, policy) {
   tab.deadline = deadline;
   const release = async (args) => {
     const state = await tab.getAXState(...args);
+    policy.scrollDirections = await tab.evaluate(SCROLL_ROOM);
     await preflight(tab, tab.url);
-    return state;
+    return withoutTypedValues(state);
   };
   return Object.create(tab, {
     getAXState: { value: (...args) => within(deadline - performance.now(), release(args), 'reading and checking the page in the run\'s remaining time') },
@@ -330,14 +346,14 @@ async function autopilot(tab, goal, { allow, steps }) {
     throw new Error(`autopilot is off for ${origin}: it would send this page's text to TypeSafe through Vercel. Hand-fly it, or ask Tyler to add the origin to ${ORIGINS}`);
   }
   const policy = {
-    click: true, scrollDirections: ['down', 'up'], denyStates: ['disabled'],
+    click: true, denyStates: ['disabled'],
     denyRoles: origin === QUANTUM ? NOT_NAVIGATION : TOGGLES,
     denyNames: [CONSEQUENTIAL, /^\(no name\)/], ...(allow ? { allowNames: [new RegExp(allow)] } : {}),
   };
   let out;
   try {
     // Each run is fresh and stays on the origin it started on; after hand-flying, a new run takes over.
-    out = await bridge.run(pilotOf(tab, performance.now() + MAX_MS), { ...JEV, goal, policy, allowedOrigins: [origin], maxSteps: Number(steps ?? 12), maxMs: MAX_MS, minConfidence: 0.55 });
+    out = await bridge.run(pilotOf(tab, performance.now() + MAX_MS, policy), { ...JEV, goal, policy, allowedOrigins: [origin], maxSteps: Number(steps ?? 12), maxMs: MAX_MS, minConfidence: 0.55, maxDecisionRetries: 2 });
   } catch (error) {
     console.log(`jev stopped: ${error.message}`);
     console.log('next: nothing more was sent to Jev; inspect the state below and replan');
@@ -350,18 +366,7 @@ async function autopilot(tab, goal, { allow, steps }) {
   console.log(out.status === 'needs_verification' ? `url ${tab.url}` : await fresh(tab));
 }
 
-// In a hidden tab Chrome can drop or delay key presses and blocks new tabs, so a silent result there says so.
-function hiddenAndInert(tab, changes) {
-  if ((tab.inputs.has('page-dispatched') || tab.animationsOff) && changes.endsWith('(no visible change)')) {
-    console.log('(nothing visibly changed in this hidden tab; Chrome can drop key presses and block new tabs there. `jb <tab> shot` brings the Dex window forward; then retry)');
-  }
-}
-
-function note(tab, settled) {
-  const facts = [];
-  if (tab.inputs.has('page-dispatched')) facts.push('pointer input was page-dispatched');
-  if (tab.animationsOff) facts.push('animations were off');
-  if (facts.length) console.log(`(hidden tab: ${facts.join('; ')}; this is navigation evidence only, so check interaction or visual behavior with the window visible)`);
+function note(settled) {
   if (settled === false) console.log('(page still changing after 5 s: snap again before relying on this)');
 }
 
@@ -382,7 +387,7 @@ async function main([first, verb, ...rest]) {
       const settled = await tab.navigate(verb);
       await tab.getAXState();
       await reportIdentity(tab);
-      note(tab, settled);
+      note(settled);
       console.log(view(await tab.getAXState()));
     } catch (error) {
       // A tab that never became usable is closed rather than left behind, and stays owned if it will not close.
@@ -417,7 +422,7 @@ async function main([first, verb, ...rest]) {
       const settled = await tab.navigate(rest[0]);
       await tab.getAXState();
       await reportIdentity(tab);
-      note(tab, settled);
+      note(settled);
       console.log(view(await tab.getAXState()));
     } else if (verb === 'snap') {
       const text = rest.includes('--text');
@@ -441,7 +446,6 @@ async function main([first, verb, ...rest]) {
           break;
         }
       }
-      note(tab);
       console.log(diff(first, await tab.getAXState(), tab.url));
     } else if (verb === 'type') {
       const [name, text, ...flags] = rest;
@@ -449,7 +453,7 @@ async function main([first, verb, ...rest]) {
       guard(tab, flags.includes('--yes'));
       const { state, entry } = await find(tab, name, (role) => TYPEABLE.has(role));
       const settled = await tab.type(entry.index, text);
-      note(tab, settled);
+      note(settled);
       console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'attach') {
       const [path, ...flags] = rest;
@@ -457,25 +461,23 @@ async function main([first, verb, ...rest]) {
       guard(tab, flags.includes('--yes'));
       const { state, entry } = await find(tab, 'Attach file', (role) => role === 'button');
       const settled = await tab.attachPdf(entry.index, path);
-      note(tab, settled);
+      note(settled);
       console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'press') {
       const [key, ...flags] = rest;
       guard(tab, flags.includes('--yes'));
       const state = await tab.getAXState();
       const settled = await tab.pressKey(null, key);
-      note(tab, settled);
-      const changes = diff(state, await tab.getAXState(), tab.url);
-      console.log(changes);
-      if (!tab.windowOpens.length) hiddenAndInert(tab, changes);
+      note(settled);
+      console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'jev') {
       guard(tab, false);
       const flag = (name) => { const i = rest.indexOf(name); return i > 0 ? rest[i + 1] : undefined; };
       await autopilot(tab, rest[0], { allow: flag('--allow'), steps: flag('--steps') });
-      note(tab);
     } else if (verb === 'shot') {
-      const path = rest[0] ?? join(HOME, `${short(id)}-${Date.now()}.png`);
-      await tab.screenshot(path);
+      const front = rest.includes('--front');
+      const path = rest.find((a) => a !== '--front') ?? join(HOME, `${short(id)}-${Date.now()}.png`);
+      await tab.screenshot(path, { front });
       console.log(`saved ${path}`);
     } else {
       throw new Error(`unknown verb ${verb ?? ''}\n\n${USAGE}`);

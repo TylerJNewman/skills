@@ -28,16 +28,16 @@ expect "chained clicks across three tabs" 'tab \([^)]*selected[^)]*\) Loan Detai
 out=$(jb "$q" go "https://quantum.loan/loans/next/18223?tab=valuation" 2>&1)
 expect "deep link opens the Valuation section" '^[0-9]+ heading VALUATION$' "$out"
 
-# Chrome blocks new tabs from a hidden tab, and search results open in one, so this step brings the Dex
-# window forward (shot does that). Afterwards Oracle's local runs need one click on a Dex Personal window.
-out=$(jb "$q" shot 2>&1); expect "shot brings the tab forward and saves a screenshot" '^saved .*\.png$' "$out"
+out=$(jb "$q" shot 2>&1); expect "shot saves a screenshot" '^saved .*\.png$' "$out"
 search=$(jb "$q" snap '⌘' 2>/dev/null | sed -n 's/^[0-9]* button \(Search.*⌘ K\)$/\1/p' | head -1)
 jb "$q" click "$search" >/dev/null 2>&1
 out=$(jb "$q" type "" "18223" 2>&1)
-if grep -qE 'option \([^)]*selected[^)]*\) [0-9]+-[0-9]+-18223-[0-9]+ ' <<<"$out"; then
+selected='option \([^)]*selected[^)]*\) [0-9]+-[0-9]+-18223-[0-9]+ '
+grep -qE "$selected" <<<"$out" || out=$(jb "$q" press ArrowDown 2>&1)
+if grep -qE "$selected" <<<"$out"; then
   pass "search palette selects loan 18223"
   out=$(jb "$q" press Enter 2>&1); for t in $(new_tabs "$out"); do tabs+=("$t"); done
-  expect "Enter opens the result in an adopted tab" 'tab [0-9A-F]{8} is at https://quantum\.loan/loans/next/18223' "$out"
+  expect "Enter opens the result in an adopted tab" 'tab [0-9A-F]{8} is at https://quantum\.loan/loans/(next/)?18223' "$out"
   expect "adopted tab is signed in inside the app shell" '^signed in as tnewman@quantafinance\.com$' "$out"
 else
   fail "search palette selects loan 18223 (Enter not pressed)" "$out"

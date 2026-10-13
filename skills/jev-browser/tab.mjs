@@ -27,16 +27,6 @@ const KEYS = {
   PageDown: [34, 'PageDown'], End: [35, 'End'], Home: [36, 'Home'],
   ArrowUp: [38, 'ArrowUp'], ArrowDown: [40, 'ArrowDown'], ArrowLeft: [37, 'ArrowLeft'], ArrowRight: [39, 'ArrowRight'],
 };
-// Hidden tabs never finish CSS animations, which leaves closed dialogs and menus mounted, so a hidden
-// tab runs without them. A visible tab keeps the page as shipped.
-const STILL = `(() => {
-  if (document.getElementById('jb-still')) return;
-  const style = document.createElement('style');
-  style.id = 'jb-still';
-  style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }';
-  document.documentElement.append(style);
-})()`;
-const UNSTILL = `document.getElementById('jb-still')?.remove()`;
 // Refuses disabled or covered targets; otherwise scrolls the target into view and returns its center.
 const PROBE = `function () {
   if (this.disabled || this.getAttribute('aria-disabled') === 'true' || this.closest('[inert]')) return 'disabled';
@@ -46,16 +36,6 @@ const PROBE = `function () {
   const y = r.y + r.height / 2;
   const hit = document.elementFromPoint(x, y);
   return hit && (hit === this || this.contains(hit)) ? [x, y] : 'covered';
-}`;
-const SYNTHETIC_CLICK = `function (x, y) {
-  const o = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y,
-    button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true };
-  this.dispatchEvent(new PointerEvent('pointerdown', o));
-  this.dispatchEvent(new MouseEvent('mousedown', o));
-  this.focus?.();
-  this.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
-  this.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 }));
-  this.dispatchEvent(new MouseEvent('click', { ...o, buttons: 0 }));
 }`;
 const DIALOG = `function () { return this.closest('[role="dialog"], [role="alertdialog"], dialog'); }`;
 // Whether this element is a dialog's search input (a combobox whose aria-controls listbox sits in the same
@@ -228,8 +208,6 @@ export async function attachTab(targetId, { connection } = {}) {
     return result.objectId ? (await metaOfObject(result.objectId))?.name || null : null;
   }
 
-  const visible = async () => (await evaluate('document.visibilityState')) === 'visible';
-
   // The last check before input reaches the page, or its text goes to Jev: no new tab is pending, and
   // the time the caller set for this work is not spent. Every dispatch that starts input follows it with
   // nothing awaited in between; only a release or key-up, which completes an admitted press, comes later.
@@ -238,21 +216,11 @@ export async function attachTab(targetId, { connection } = {}) {
     if (performance.now() > tab.deadline) throw new Error('out of time, so nothing more was done');
   }
 
-  // Keep the page as shipped while visible; drop animations while hidden. Rechecked before every action.
-  async function syncStill() {
-    const hidden = !(await visible());
-    await evaluate(hidden ? STILL : UNSTILL);
-    if (hidden) tab.animationsOff = true;
-    return hidden;
-  }
-
   // After an action, wait until the page holds still (same URL, element count and text length) and the
-  // first-party network has been quiet for the same window. A hidden tab's timers fire about once a
-  // second, so it needs a longer window before a delayed route change can be ruled out. A page that
-  // cannot be read never counts as still. Resolves false when the page is still busy after 5 s.
+  // first-party network has been quiet for the same window. A page that cannot be read never counts as
+  // still. Resolves false when the page is still busy after 5 s.
   async function settle(quietMs = 200, until = Infinity) {
     const deadline = Math.min(performance.now() + 5000, until);
-    if (!(await within(deadline - performance.now(), visible(), 'reading the page').catch(() => true))) quietMs = Math.max(quietMs, 1100);
     let last = null;
     let stableSince = performance.now();
     while (performance.now() < deadline) {
@@ -281,8 +249,6 @@ export async function attachTab(targetId, { connection } = {}) {
     evaluate,
     waitForLoad,
     url: null, // the URL of the latest snapshot, read from the same document as its tree
-    inputs: new Set(), // 'trusted' and/or 'page-dispatched', for every action in this attachment
-    animationsOff: false,
     windowOpens: [], // URLs the page asked to open in new tabs
     deadline: Infinity, // performance.now() after which no input starts
     authorize: null, // async ({ verb, index, key }) => throws to refuse; installed by jb
@@ -331,65 +297,45 @@ export async function attachTab(targetId, { connection } = {}) {
     },
 
     // Resolves true once the page settles, false if it was still changing after 5 s.
-    // The animation sync can change the page, so it runs before the check reads the target's facts; the
-    // hit-test runs after both, on the layout the input will meet.
+    // The hit-test runs after the check, on the layout the input will meet.
     async click(index) {
-      const hidden = await syncStill();
       await tab.authorize?.({ verb: 'click', index });
       const target = await objectOf(index);
       const at = await callObject(target, PROBE);
       if (at === 'disabled') throw new Error(`element ${index} is disabled; nothing was clicked`);
       if (at === 'covered') throw new Error(`element ${index} is covered by another element at its center; nothing was clicked`);
+      const [x, y] = at;
       tab.lastCheck();
-      if (hidden) {
-        await callObject(target, SYNTHETIC_CLICK, at);
-        tab.inputs.add('page-dispatched');
-      } else {
-        const [x, y] = at;
-        await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-        tab.lastCheck(); // the move can make the page ask for a tab, and takes time
-        await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-        await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-        tab.inputs.add('trusted');
-      }
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      tab.lastCheck(); // the move can make the page ask for a tab, and takes time
+      await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
       return settle();
     },
 
     // Scrolls the page, or element `index` of the latest snapshot.
     async scroll(index, direction, amount = 1) {
       const pages = (direction === 'down' ? 0.8 : -0.8) * amount;
-      const hidden = await syncStill();
       await tab.authorize?.({ verb: 'scroll', index });
       const target = typeof index === 'number' ? await objectOf(index) : null;
-      if (hidden) {
-        tab.lastCheck();
-        if (target) await callObject(target, 'function (p) { (this.scrollHeight > this.clientHeight ? this : document.scrollingElement).scrollBy(0, p * innerHeight); }', [pages]);
-        else await evaluate(`scrollBy(0, ${pages} * innerHeight)`);
-        tab.inputs.add('page-dispatched');
-      } else {
-        const at = target ? await callObject(target, PROBE) : await evaluate('[innerWidth / 2, innerHeight / 2]');
-        if (!Array.isArray(at)) throw new Error(`element ${index} is ${at}; nothing was scrolled`);
-        const deltaY = pages * (await evaluate('innerHeight'));
-        tab.lastCheck();
-        await c.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: at[0], y: at[1], deltaX: 0, deltaY });
-        tab.inputs.add('trusted');
-      }
+      const at = target ? await callObject(target, PROBE) : await evaluate('[innerWidth / 2, innerHeight / 2]');
+      if (!Array.isArray(at)) throw new Error(`element ${index} is ${at}; nothing was scrolled`);
+      const deltaY = pages * (await evaluate('innerHeight'));
+      tab.lastCheck();
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: at[0], y: at[1], deltaX: 0, deltaY });
       return settle();
     },
 
-    // Keyboard input is trusted in hidden tabs too.
     async pressKey(_element, name) {
       const shift = name === 'Shift+Tab';
       const spec = KEYS[shift ? 'Tab' : name];
       if (!spec) throw new Error(`unsupported key ${name}`);
-      await syncStill();
       await tab.authorize?.({ verb: 'press', key: name });
       const [code, key, text] = spec;
       const base = { key, code: key, windowsVirtualKeyCode: code, modifiers: shift ? 8 : 0 };
       tab.lastCheck();
       await c.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, ...(text ? { text } : {}) });
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
-      tab.inputs.add('trusted');
       return settle();
     },
 
@@ -412,21 +358,18 @@ export async function attachTab(targetId, { connection } = {}) {
 
     // Focus the authorized field, select its value, confirm it still holds focus, then insert text as trusted input.
     async type(index, text) {
-      await syncStill();
       await tab.authorize?.({ verb: 'type', index });
       await c.send('DOM.focus', { backendNodeId: byIndex[index] });
       const stillHere = await callObject(await objectOf(index), 'function () { this.select?.(); return document.activeElement === this; }');
       if (!stillHere) throw new Error(`focus moved away from element ${index} when it was focused; nothing was typed`);
       tab.lastCheck();
       await c.send('Input.insertText', { text });
-      tab.inputs.add('trusted');
       return settle(600); // search boxes debounce before they fetch
     },
 
     // Select through Chrome's file-input API; the app still owns validation and its upload handler.
     async attachPdf(index, path) {
       if (!isAbsolute(path) || !/\.pdf$/i.test(path) || !statSync(path).isFile()) throw new Error('attach requires one existing absolute PDF file path');
-      await syncStill();
       await tab.authorize?.({ verb: 'click', index }); // same authorization as the named Attach file button
       const { result, exceptionDetails } = await c.send('Runtime.callFunctionOn', {
         objectId: await objectOf(index),
@@ -444,26 +387,21 @@ export async function attachTab(targetId, { connection } = {}) {
       return settle();
     },
 
-    // A screenshot needs a rendered tab, so this brings the Dex window forward and restores animations.
-    async screenshot(path) {
-      if (!(await visible())) {
-        await c.send('Page.bringToFront');
-        for (const deadline = performance.now() + 3000; !(await visible()) && performance.now() < deadline;) await sleep(100);
-        if (!(await visible())) throw new Error('the tab stays hidden behind another window, so there is nothing to capture; ask Tyler to uncover the Dex window');
-      }
-      await evaluate(UNSTILL);
-      const { data } = await c.send('Page.captureScreenshot', { format: 'png' });
+    async screenshot(path, { front = false } = {}) {
+      if (front) await c.send('Page.bringToFront');
+      const { data } = await c.send('Page.captureScreenshot', { format: 'png' }).catch((error) => {
+        throw new Error(`${error.message}${front ? '' : '; rerun with --front, which brings the Dex window forward'}`);
+      });
       writeFileSync(path, Buffer.from(data, 'base64'));
     },
   };
 
   try {
     for (const d of ['Page', 'DOM', 'Runtime', 'Accessibility', 'Network']) await c.send(`${d}.enable`);
-    await syncStill();
+    await c.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   } catch (error) {
     c.close();
     throw error;
   }
-  tab.animationsOff = false; // report only the suppression an action in this attachment relied on
   return tab;
 }
