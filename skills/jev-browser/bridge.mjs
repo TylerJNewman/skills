@@ -59,7 +59,8 @@ export async function decide({key,goal,state,actions,history=[],timeoutMs=20000}
   const answer = result?.answers?.next;
   const probabilities = answer?.probabilities;
   if (answer?.type !== 'choice' || !Object.hasOwn(criteria,answer.choice) || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1 || !probabilities || Object.keys(probabilities).sort().join('|') !== Object.keys(criteria).sort().join('|') || Object.values(probabilities).some(value => !Number.isFinite(value) || value < 0 || value > 1) || Math.abs(Object.values(probabilities).reduce((a,b) => a+b,0)-1) > 0.02 || probabilities[answer.choice] < Math.max(...Object.values(probabilities))-1e-6 || typeof result.model !== 'string' || !modelPattern.test(result.model)) throw new Error(`Invalid ${provider} decision schema`);
-  return {provider,choice:answer.choice,confidence:answer.confidence,model:result.model,apiMs:Math.round(performance.now()-startedAt),action:answer.choice.startsWith('a') ? actions[Number(answer.choice.slice(1))] : null};
+  const alternatives = Object.entries(probabilities).sort((a,b) => b[1]-a[1]).slice(0,3).map(([choice,probability]) => ({choice:choice.startsWith('a') ? actions[Number(choice.slice(1))].description : choice,probability}));
+  return {provider,choice:answer.choice,confidence:answer.confidence,model:result.model,apiMs:Math.round(performance.now()-startedAt),action:answer.choice.startsWith('a') ? actions[Number(answer.choice.slice(1))] : null,alternatives,request:body};
 }
 
 // Codex may opt in to all currently observed low-risk mechanical actions.
@@ -92,13 +93,13 @@ function result(status,history,state,startedAt,details={}) {
 }
 
 // This accepts an already-authorized browser tab object; it never opens a browser.
-export async function run(tab,{goal,policy,envFile,allowedOrigins,maxSteps=10,minConfidence=0.55,maxMs=45000,decisionTimeoutMs=20000,maxDecisionRetries=1,waitPollMs=750}) {
+export async function run(tab,{goal,policy,key,envFile,allowedOrigins,maxSteps=10,minConfidence=0.55,maxMs=45000,decisionTimeoutMs=20000,maxDecisionRetries=1,waitPollMs=750}) {
   if (typeof goal !== 'string' || !goal || !policy || typeof policy !== 'object' || !Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 30 || !Number.isFinite(maxMs) || maxMs < 1 || maxMs > 45000 || !Number.isFinite(decisionTimeoutMs) || decisionTimeoutMs < 1000 || decisionTimeoutMs > 30000 || !Number.isInteger(maxDecisionRetries) || maxDecisionRetries < 0 || maxDecisionRetries > 2 || !Number.isFinite(minConfidence) || minConfidence < 0.55 || minConfidence > 1 || !Number.isFinite(waitPollMs) || waitPollMs < 100 || waitPollMs > 5000 || !Array.isArray(allowedOrigins) || !allowedOrigins.length) throw new Error('Invalid task contract');
   const history = [];
   const startedAt = performance.now();
   let waits = 0;
   let decisionRetries = 0;
-  const key = envFile ? parseEnv(await readFile(envFile,'utf8')).AI_GATEWAY_API_KEY : undefined;
+  key ??= envFile ? parseEnv(await readFile(envFile,'utf8')).AI_GATEWAY_API_KEY : undefined;
   let state = await tab.getAXState({emit:false,disableDiffing:true});
   try {
     for (let step=0;step<maxSteps;step++) {
@@ -116,6 +117,7 @@ export async function run(tab,{goal,policy,envFile,allowedOrigins,maxSteps=10,mi
         history.push({provider,choice:'ERROR',confidence:null,model,apiMs:Math.round(performance.now()-decisionStartedAt),action:'Decision request',executed:false,reason:canRetry ? 'decision_retry' : 'decision_error'});
         if (canRetry) {
           decisionRetries += 1;
+          await new Promise(resolve => setTimeout(resolve,Math.min(500*decisionRetries,maxMs-(performance.now()-startedAt))));
           state = await tab.getAXState({emit:false,disableDiffing:true});
           checkState(state,allowedOrigins);
           step -= 1;
@@ -124,7 +126,7 @@ export async function run(tab,{goal,policy,envFile,allowedOrigins,maxSteps=10,mi
         return result('decision_error',history,state,startedAt,{error:error instanceof Error ? error.message : 'Decision failed'});
       }
       decisionRetries = 0;
-      const record = {provider:decision.provider,choice:decision.choice,confidence:decision.confidence,model:decision.model,apiMs:decision.apiMs,action:decision.action?.description ?? decision.choice};
+      const record = {provider:decision.provider,choice:decision.choice,confidence:decision.confidence,model:decision.model,apiMs:decision.apiMs,action:decision.action?.description ?? decision.choice,alternatives:decision.alternatives,request:decision.request};
       const fresh = await tab.getAXState({emit:false,disableDiffing:true});
       checkState(fresh,allowedOrigins);
       if (performance.now()-startedAt >= maxMs) return result('budget',history,fresh,startedAt);

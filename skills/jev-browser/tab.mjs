@@ -72,9 +72,38 @@ export function within(ms, promise, what) {
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
+function textUnder(node, skip, byId) {
+  if (node === skip) return [];
+  if (node.role?.value === 'StaticText') return [oneLine(node.name?.value)];
+  return (node.childIds ?? []).flatMap((id) => (byId.has(id) ? textUnder(byId.get(id), skip, byId) : []));
+}
+
+function surroundingsOfRepeatedControls(nodes, byId) {
+  const sameName = new Map();
+  for (const n of nodes) {
+    const name = clip(oneLine(n.name?.value));
+    if (!n.ignored && name && CONTROLS.has(n.role?.value)) sameName.set(name, [...(sameName.get(name) ?? []), n]);
+  }
+  const surroundings = new Map();
+  for (const controls of sameName.values()) {
+    if (controls.length < 2) continue;
+    const controlsUnder = new Map();
+    for (const control of controls)
+      for (let p = byId.get(control.parentId); p; p = byId.get(p.parentId)) controlsUnder.set(p.nodeId, (controlsUnder.get(p.nodeId) ?? 0) + 1);
+    for (const control of controls) {
+      let own = control;
+      for (let p = byId.get(control.parentId); p && controlsUnder.get(p.nodeId) === 1; p = byId.get(p.parentId)) own = p;
+      const text = textUnder(own, control, byId).filter(Boolean).join(' ');
+      if (text) surroundings.set(control.nodeId, clip(text, 40));
+    }
+  }
+  return surroundings;
+}
+
 /** Snapshot text from an accessibility tree, plus each index's backend node and raw metadata. */
 export function formatState(title, url, nodes) {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
+  const surroundings = surroundingsOfRepeatedControls(nodes, byId);
   const insideControl = (n) => {
     for (let p = byId.get(n.parentId), d = 0; p && d < 4; p = byId.get(p.parentId), d++)
       if (CONTROLS.has(p.role?.value) || p.role?.value === 'heading') return true;
@@ -94,7 +123,8 @@ export function formatState(title, url, nodes) {
     const states = STATES.filter((s) => m.props[s] === true || m.props[s] === 'true' || m.props[s] === 'mixed');
     const value = oneLine(n.value?.value);
     // bridge.mjs cannot parse an empty name, and reads a leading "(...)" as states, so those get an explicit slot.
-    const label = clip(name || '(no name)') + (value ? `, Value: ${clip(value, 60)}` : '');
+    const within = surroundings.get(n.nodeId);
+    const label = clip(name || '(no name)') + (within ? ` (in: ${within})` : '') + (value ? `, Value: ${clip(value, 60)}` : '');
     const slot = states.length || label.startsWith('(') ? ` (${states.join(', ')})` : '';
     byIndex.push(n.backendDOMNodeId);
     meta.push(m);
@@ -154,6 +184,8 @@ export const openedBy = (targetId) => withBrowser(async (b) =>
   (await b.send('Target.getTargets')).targetInfos.filter((t) => t.type === 'page' && t.openerId === targetId));
 
 export const closeTarget = (targetId) => withBrowser((b) => b.send('Target.closeTarget', { targetId }));
+
+export const openTargetIds = () => withBrowser(async (b) => new Set((await b.send('Target.getTargets')).targetInfos.map((t) => t.targetId)));
 
 export async function attachTab(targetId, { connection } = {}) {
   const c = connection ?? await connect(`${endpoint().replace('http', 'ws')}/devtools/page/${targetId}`);
@@ -388,11 +420,15 @@ export async function attachTab(targetId, { connection } = {}) {
     },
 
     async screenshot(path, { front = false } = {}) {
-      if (front) await c.send('Page.bringToFront');
-      const { data } = await c.send('Page.captureScreenshot', { format: 'png' }).catch((error) => {
-        throw new Error(`${error.message}${front ? '' : '; rerun with --front, which brings the Dex window forward'}`);
-      });
-      writeFileSync(path, Buffer.from(data, 'base64'));
+      const capture = () => c.send('Page.captureScreenshot', { format: 'png' });
+      let shot = front ? null : await within(3000, capture(), 'the capture').catch(() => null);
+      const raised = !shot;
+      if (raised) {
+        await c.send('Page.bringToFront');
+        shot = await capture();
+      }
+      writeFileSync(path, Buffer.from(shot.data, 'base64'));
+      return raised;
     },
   };
 

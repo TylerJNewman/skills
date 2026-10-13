@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev autopilot.
+import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import * as bridge from './bridge.mjs';
-import { attachTab, browserInstance, closeTarget, openedBy, openInDexWork, POPUP, targetInfo, within } from './tab.mjs';
+import { attachTab, browserInstance, closeTarget, openedBy, openInDexWork, openTargetIds, POPUP, targetInfo, within } from './tab.mjs';
 
 const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev autopilot.
 
@@ -20,7 +22,8 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
   jb <tab> jev "<goal>" [--allow "<regex>"] [--steps N]
                                    Jev autopilot toward one observable goal, on an approved origin
   jb <tab> shot [file.png] [--front]
-                                   screenshot the viewport and print its path; --front also brings the Dex window forward
+                                   screenshot the viewport and print its path, raising the Dex window only when
+                                   --front asks or no frame can be captured without it
   jb <tab> close                   close the tab
 
   --yes   after click, type, press, or attach: Tyler approved this consequential action in chat.
@@ -28,13 +31,14 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
 
 <tab> is the id jb printed, or any unique prefix. jb drives only tabs it opened and tabs those opened.
 Autopilot runs only on origins listed in ~/.config/jev-browser/origins (one per line), because
-it sends the page's text to TypeSafe through Vercel AI Gateway. It reads AI_GATEWAY_API_KEY from
-JEV_ENV_FILE (default: the muse-birds .env.local, per the /jev skill).`;
+it sends the page's text to TypeSafe through Vercel AI Gateway. It takes AI_GATEWAY_API_KEY from the
+environment, or else from Infisical (prod, /agents/ai-gateway).`;
 
 const HOME = join(homedir(), '.cache', 'jev-browser');
 const OWNED = join(HOME, 'tabs'); // one file per tab jb owns: <targetId>.json
+const RUNS = join(HOME, 'runs');
 const ORIGINS = join(homedir(), '.config', 'jev-browser', 'origins');
-const JEV = { envFile: process.env.JEV_ENV_FILE ?? '/Users/tyler/code/muse-birds/.env.local' };
+const GATEWAY_KEY_IN_INFISICAL = ['secrets', 'get', 'AI_GATEWAY_API_KEY', '--env=prod', '--path=/agents/ai-gateway', '--plain', '--silent'];
 const QUANTUM = 'https://quantum.loan';
 const ACCOUNT = 'tnewman@quantafinance.com';
 const SHELL = '[data-sidebar]'; // Quantum's app-shell sidebar parts (at least its trigger); absent on its sign-in page
@@ -72,6 +76,7 @@ const SCROLL_ROOM = `(() => {
   return ['down', 'up'].filter((direction) => room.has(direction));
 })()`;
 const MAX_MS = 45000; // one autopilot run
+const ARRIVAL_CONFIDENCE = 0.85;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const originOf = (url) => { try { return new URL(url).origin; } catch { return ''; } };
@@ -210,6 +215,8 @@ async function find(tab, name, fits) {
     const hits = entries.filter((e) => (name === '' ? e.states.includes('focused') : nameOf(e) === name));
     if (hits.length === 1) return { state, entry: hits[0] };
     if (hits.length > 1) throw new Error(`${hits.length} elements named "${name}"; snap and pick a control with a unique name`);
+    const repeats = entries.filter((e) => name && nameOf(e).startsWith(`${name} (in: `));
+    if (repeats.length) throw new Error(`${repeats.length} elements named "${name}"; pass one as snap prints it, such as "${nameOf(repeats[0])}"`);
     if (Date.now() > deadline) throw new Error(`nothing named "${name}" after 10 s; jb <tab> snap shows the names`);
     await sleep(250);
   }
@@ -224,6 +231,20 @@ const ownedIds = () => (existsSync(OWNED) ? readdirSync(OWNED).filter((f) => f.e
 const isOwned = (targetId) => existsSync(join(OWNED, `${targetId}.json`));
 const recordOf = (targetId) => JSON.parse(readFileSync(join(OWNED, `${targetId}.json`), 'utf8'));
 const disown = (targetId) => { try { unlinkSync(join(OWNED, `${targetId}.json`)); } catch {} };
+
+async function forgetClosedTabs() {
+  const ownedBeforeLooking = ownedIds();
+  const open = await openTargetIds();
+  for (const id of ownedBeforeLooking) if (!open.has(id)) disown(id);
+}
+
+async function gatewayKey() {
+  if (process.env.AI_GATEWAY_API_KEY) return process.env.AI_GATEWAY_API_KEY;
+  const { stdout } = await promisify(execFile)('infisical', GATEWAY_KEY_IN_INFISICAL, { cwd: homedir(), timeout: 15000 }).catch((error) => {
+    throw new Error(`could not get AI_GATEWAY_API_KEY from Infisical (prod, /agents/ai-gateway): ${error.stderr?.trim() || error.message}`);
+  });
+  return stdout.trim();
+}
 
 async function resolveTab(prefix) {
   const ids = ownedIds().filter((id) => id.startsWith(prefix));
@@ -339,6 +360,8 @@ export function pilotOf(tab, deadline, policy) {
   });
 }
 
+export const doubtWeakArrival = (out) => (out.status === 'needs_verification' && out.history.at(-1).confidence < ARRIVAL_CONFIDENCE ? { ...out, status: 'low_confidence' } : out);
+
 async function autopilot(tab, goal, { allow, steps }) {
   await tab.getAXState();
   const origin = originOf(tab.url);
@@ -353,7 +376,8 @@ async function autopilot(tab, goal, { allow, steps }) {
   let out;
   try {
     // Each run is fresh and stays on the origin it started on; after hand-flying, a new run takes over.
-    out = await bridge.run(pilotOf(tab, performance.now() + MAX_MS, policy), { ...JEV, goal, policy, allowedOrigins: [origin], maxSteps: Number(steps ?? 12), maxMs: MAX_MS, minConfidence: 0.55, maxDecisionRetries: 2 });
+    const key = await gatewayKey();
+    out = doubtWeakArrival(await bridge.run(pilotOf(tab, performance.now() + MAX_MS, policy), { key, goal, policy, allowedOrigins: [origin], maxSteps: Number(steps ?? 12), maxMs: MAX_MS, minConfidence: 0.55, maxDecisionRetries: 2 }));
   } catch (error) {
     console.log(`jev stopped: ${error.message}`);
     console.log('next: nothing more was sent to Jev; inspect the state below and replan');
@@ -362,6 +386,14 @@ async function autopilot(tab, goal, { allow, steps }) {
   }
   console.log(`jev ${out.status} in ${(out.elapsedMs / 1000).toFixed(1)}s: ${out.history.map(describe).join(' > ')}`);
   if (out.error) console.log(`error ${out.error}`);
+  mkdirSync(RUNS, { recursive: true, mode: 0o700 });
+  const record = join(RUNS, `${short(tab.targetId)}-${Date.now()}.json`);
+  writeFileSync(record, JSON.stringify({ goal, origin, status: out.status, elapsedMs: out.elapsedMs, error: out.error, history: out.history }, null, 1), { mode: 0o600 });
+  if (out.status !== 'needs_verification') {
+    const alternatives = out.history.at(-1)?.alternatives;
+    if (alternatives) console.log(`torn between: ${alternatives.map((a) => `${a.choice} ${a.probability.toFixed(2)}`).join(', ')}`);
+    console.log(`record ${record}`);
+  }
   console.log(`next: ${NEXT[out.status]}`);
   console.log(out.status === 'needs_verification' ? `url ${tab.url}` : await fresh(tab));
 }
@@ -376,6 +408,7 @@ async function main([first, verb, ...rest]) {
 
   if (first === 'open') {
     if (!/^https?:\/\//.test(verb ?? '')) throw new Error('usage: jb open <url>');
+    await forgetClosedTabs();
     const profile = process.env.JB_PROFILE || 'work';
     const { targetId, contextId, browser } = await openInDexWork(profile);
     if (profile !== 'work') console.log(`(profile: ${profile}, not Dex Work)`);
@@ -477,7 +510,8 @@ async function main([first, verb, ...rest]) {
     } else if (verb === 'shot') {
       const front = rest.includes('--front');
       const path = rest.find((a) => a !== '--front') ?? join(HOME, `${short(id)}-${Date.now()}.png`);
-      await tab.screenshot(path, { front });
+      const raised = await tab.screenshot(path, { front });
+      if (raised && !front) console.log('(no frame could be captured in 3 s, so the Dex window was brought forward)');
       console.log(`saved ${path}`);
     } else {
       throw new Error(`unknown verb ${verb ?? ''}\n\n${USAGE}`);
