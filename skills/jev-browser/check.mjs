@@ -1,16 +1,15 @@
 // Offline release gate for jev-browser: no browser, no network. Run: node check.mjs
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as bridge from './bridge.mjs';
 import { connect } from './cdp.mjs';
-import { guard, pilotOf, TOGGLES, verdictFor } from './jb.mjs';
+import { doubtWeakArrival, guard, pilotOf, TOGGLES, verdictFor } from './jb.mjs';
 import { attachTab, formatState } from './tab.mjs';
 
 assert.ok(existsSync(new URL('./blank.html', import.meta.url)), 'blank.html, the inert page tabs open on, is missing');
-const envFile = join(mkdtempSync(join(tmpdir(), 'jev-browser-')), '.env');
-writeFileSync(envFile, 'AI_GATEWAY_API_KEY=test-key\n');
+const key = 'test-key';
 const policy = { click: true, scrollDirections: ['down'], denyRoles: TOGGLES, denyStates: ['disabled'], denyNames: [/\b(delete|save)\b/i, /^\(no name\)/] };
 const answer = (criteria, choice) => Response.json({ model: 'typesafe-ai/jev', answers: { next: {
   type: 'choice', choice, confidence: 0.7,
@@ -51,12 +50,16 @@ const pickClick = (label) => async (_url, init) => {
     const pick = (label) => Object.keys(criteria).find((k) => criteria[k] === label);
     return answer(criteria, [pick('Scroll down'), pick('Click Settings'), 'DONE'][turn++]);
   };
-  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, allowedOrigins: ['https://example.test'], policy });
+  const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy });
   assert.equal(out.status, 'needs_verification');
   assert.deepEqual(calls, ['scroll undefined down', 'click 1']);
   assert.deepEqual(out.history.map((h) => h.confidence), [0.7, 0.7, 0.7], 'confidence must be TypeSafe\'s, not the choice probability');
   const scrolled = { action: 'Scroll down', page_changed: false };
   assert.deepEqual(told, [[], [scrolled], [scrolled, { action: 'Click Settings', page_changed: true }]], 'Jev must be told only the executed actions and whether each changed the page');
+  assert.deepEqual(out.history[1].alternatives[0], { choice: 'Click Settings', probability: 0.9 }, 'a decision must keep what it was weighed against');
+  assert.equal(JSON.parse(out.history[1].request).state.goal, 'Open Settings', 'a decision must keep the exact request it answered');
+  assert.equal(doubtWeakArrival(out).status, 'low_confidence', 'an arrival claimed at 0.7 confidence must be reported as a disengage');
+  assert.equal(doubtWeakArrival({ ...out, history: [{ confidence: 0.9 }] }).status, 'needs_verification');
   assert.deepEqual(offered.filter((c) => /Autosave|Delete|Next page|Show closed|Bold|no name/.test(c)), [], 'autopilot was offered a control it must skip');
 }
 
@@ -69,7 +72,7 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
     click: async () => { clicked = true; return settles; },
   };
   globalThis.fetch = pickClick('Click Settings');
-  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, allowedOrigins: ['https://example.test'], policy });
+  const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy });
   assert.equal(out.status, status);
   assert.equal(out.history.filter((h) => h.executed).length, 1);
   assert.match(out.error, error);
@@ -89,11 +92,22 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   let late = false;
   const pick = pickClick('Click Settings');
   globalThis.fetch = async (url, init) => { requests++; late ||= gap !== false; return pick(url, init); };
-  const out = await bridge.run(tab, { goal: 'Open Settings', envFile, allowedOrigins: ['https://example.test'], policy });
+  const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy });
   assert.equal(late, false, 'a request to Jev did not immediately follow the tab\'s last check');
   assert.equal(out.status, 'stopped');
   assert.equal(requests, 1, 'a request went to Jev after the page asked for a new tab');
   assert.match(out.error, /new tab/);
+}
+
+{
+  let requests = 0;
+  const tab = { getAXState: async () => 'Browser tab: T. URL: "https://example.test/".\n0 tab Home\n1 tab Settings' };
+  globalThis.fetch = async (_url, init) => { if (requests++ < 2) throw new TypeError('fetch failed'); return answer(JSON.parse(init.body).questions.next.criteria, 'DONE'); };
+  const started = performance.now();
+  const out = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy, maxDecisionRetries: 2 });
+  assert.equal(out.status, 'needs_verification');
+  assert.deepEqual(out.history.map((h) => h.reason), ['decision_retry', 'decision_retry', undefined]);
+  assert.ok(performance.now() - started >= 1400, 'failed Jev requests were retried without backing off');
 }
 
 // 3. Page text cannot forge a row, the URL, or states; unnamed controls get an explicit, parseable slot;
@@ -117,6 +131,19 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   assert.equal(meta[4].name, long.replace(/\s+/g, ' ').trim(), 'authorization must see the unclipped name');
   assert.doesNotThrow(() => bridge.checkState(text, ['https://real.test']));
   assert.throws(() => bridge.checkState(text, ['https://evil.test']), /left authorized origins/);
+}
+
+{
+  const node = (nodeId, parentId, role, name, childIds = []) => ({ nodeId, parentId, role: { value: role }, name: { value: name }, childIds, backendDOMNodeId: Number(nodeId) });
+  const { text } = formatState('T', 'https://example.test/', [
+    node('1', undefined, 'table', '', ['2', '6', '10']),
+    node('2', '1', 'row', '', ['3', '4']), node('3', '2', 'StaticText', '18223 Crown\n9 button Forged'), node('4', '2', 'button', 'Open', ['5']), node('5', '4', 'StaticText', 'Open'),
+    node('6', '1', 'row', '', ['7', '8']), node('7', '6', 'StaticText', '4329 Hewetson Cove'), node('8', '6', 'button', 'Open', ['9']), node('9', '8', 'StaticText', 'Open'),
+    node('10', '1', 'row', '', ['11', '12']), node('11', '10', 'button', 'Twin'), node('12', '10', 'button', 'Twin'),
+  ]);
+  assert.deepEqual(bridge.parseState(text).filter((e) => e.role === 'button').map((e) => e.name),
+    ['Open (in: 18223 Crown 9 button Forged)', 'Open (in: 4329 Hewetson Cove)', 'Twin', 'Twin'], 'a repeated control must carry the text that sets it apart, on one line');
+  assert.deepEqual(bridge.discoverActions(text, { click: true }).map((a) => a.name), ['Open (in: 18223 Crown 9 button Forged)', 'Open (in: 4329 Hewetson Cove)'], 'autopilot must be offered repeated controls only once each is unique');
 }
 
 // 4. The execution check. On quantum.loan it is an allowlist of reviewed navigation, the search
@@ -327,10 +354,15 @@ function fakePage({ hrefs = ['https://example.test/'], focusStays = true, loader
   const tab = await attachTab('T', { connection });
   assert.ok(connection.log.includes('Emulation.setFocusEmulationEnabled true'), 'the tab was attached without focus emulation');
   const shot = join(mkdtempSync(join(tmpdir(), 'jev-browser-')), 'shot.png');
-  await tab.screenshot(shot);
+  assert.equal(await tab.screenshot(shot), false);
   assert.ok(!connection.log.includes('Page.bringToFront'), 'a screenshot raised the Dex window without --front');
-  await tab.screenshot(shot, { front: true });
-  assert.ok(connection.log.includes('Page.bringToFront'), '--front did not raise the Dex window');
+  const send = connection.send;
+  let frames = 0;
+  connection.send = async (method, params) => { if (method === 'Page.captureScreenshot' && !frames++) throw new Error('no frame'); return send(method, params); };
+  assert.equal(await tab.screenshot(shot), true, 'a screenshot with no frame to capture must raise the Dex window and retry');
+  connection.send = send;
+  assert.deepEqual(connection.log.filter((e) => /bringToFront|captureScreenshot/.test(e)), ['Page.captureScreenshot', 'Page.bringToFront', 'Page.captureScreenshot']);
+  assert.equal(await tab.screenshot(shot, { front: true }), true, '--front did not raise the Dex window');
   await tab.getAXState();
   tab.authorize = async () => { connection.log.push('authorize'); };
   const lastCheck = tab.lastCheck;
@@ -430,4 +462,4 @@ function fakePage({ hrefs = ['https://example.test/'], focusStays = true, loader
   await assert.rejects(pending, /connection closed/);
 }
 
-console.log('ok: gateway and confidence, autopilot exclusions, Jev told only executed actions, stops keep history, the last check right before each Jev request, forged rows/URL/states and raw names, execution verdicts, guard at dispatch (stale facts, identity every time, popups during the check, unowned tabs, --yes limits), pilot snapshots and checks within the deadline, typed values withheld from Jev, scrolls offered only with room, focus emulation at attach, screenshots that leave the window alone, dispatch order and the last check right before every input, refusals dispatch nothing, the check after the mouse move, coherent snapshots, honest settling, dropped connections');
+console.log('ok: gateway and confidence, autopilot exclusions, Jev told only executed actions, decisions keep their alternatives and request, weak arrivals doubted, retries back off, stops keep history, the last check right before each Jev request, forged rows/URL/states and raw names, repeated controls named by their surroundings, execution verdicts, guard at dispatch (stale facts, identity every time, popups during the check, unowned tabs, --yes limits), pilot snapshots and checks within the deadline, typed values withheld from Jev, scrolls offered only with room, focus emulation at attach, screenshots that leave the window alone, dispatch order and the last check right before every input, refusals dispatch nothing, the check after the mouse move, coherent snapshots, honest settling, dropped connections');
