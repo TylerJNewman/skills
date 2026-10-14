@@ -10,7 +10,7 @@ Install both skills together so the native helper can reuse the browser skill's 
 npx skills@latest add TylerJNewman/skills --skill jev-browser jev-computer-use -g
 ```
 
-Select your agent in the installer. Restart its session to discover the skills. Node.js 22+ is required. Native work needs the agent's supported CUA integration; installing a skill does not install or grant desktop access.
+Select your agent in the installer. Restart its session to discover the skills. Node.js 22+ is required. Run `npm ci` once in `jev-browser`; autopilot and the native helper reach Jev through the AI SDK's `experimental_evaluate`. Native work needs the agent's supported CUA integration; installing a skill does not install or grant desktop access.
 
 Ask: **“Use jev-computer-use to open the Library section in this native app.”** The agent handles CUA and uses the helper to propose navigation. Browser-only requests use `jev-browser`.
 
