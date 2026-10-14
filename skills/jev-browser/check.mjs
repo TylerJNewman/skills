@@ -11,17 +11,17 @@ import { attachTab, formatState } from './tab.mjs';
 assert.ok(existsSync(new URL('./blank.html', import.meta.url)), 'blank.html, the inert page tabs open on, is missing');
 const key = 'test-key';
 const policy = { click: true, scrollDirections: ['down'], denyRoles: TOGGLES, denyStates: ['disabled'], denyNames: [/\b(delete|save)\b/i, /^\(no name\)/] };
-const answer = (criteria, choice) => Response.json({ model: 'typesafe-ai/jev', answers: { next: {
-  type: 'choice', choice, confidence: 0.7,
-  probabilities: Object.fromEntries(Object.keys(criteria).map((k) => [k, k === choice ? 0.9 : 0.1 / (Object.keys(criteria).length - 1)])),
-} } });
+const answer = (criteria, choice, confidence = 0.7) => Response.json({
+  answers: { next: { type: 'choice', choice, probabilities: Object.fromEntries(Object.keys(criteria).map((k) => [k, k === choice ? 0.9 : 0.1 / (Object.keys(criteria).length - 1)])) } },
+  providerMetadata: { typesafe: { confidence: { next: confidence } } },
+});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pickClick = (label) => async (_url, init) => {
   const { criteria } = JSON.parse(init.body).questions.next;
   return answer(criteria, Object.keys(criteria).find((k) => criteria[k] === label));
 };
 
-// 1. Autopilot goes through the Gateway's TypeSafe-compatible endpoint, keeps TypeSafe's own confidence,
+// 1. Autopilot goes through the AI SDK's evaluation model on the Gateway, keeps TypeSafe's own confidence,
 //    is offered no toggles, disabled, unnamed, or consequential controls, and scrolls through tab.scroll.
 {
   let selected = 'Home';
@@ -40,10 +40,12 @@ const pickClick = (label) => async (_url, init) => {
   const told = [];
   let turn = 0;
   globalThis.fetch = async (url, init) => {
-    assert.equal(url, 'https://ai-gateway.vercel.sh/typesafe/v1/systemone');
-    assert.equal(init.headers.Authorization, 'Bearer test-key');
+    assert.equal(url, 'https://ai-gateway.vercel.sh/v4/ai/evaluation-model');
+    assert.equal(init.headers.authorization, 'Bearer test-key');
+    assert.equal(init.headers['ai-model-id'], 'typesafe-ai/jev');
+    assert.equal(init.headers['ai-gateway-protocol-version'], '0.0.1');
     const body = JSON.parse(init.body);
-    assert.equal(body.model, 'typesafe-ai/jev');
+    assert.deepEqual(body.providerOptions, { gateway: { zeroDataRetention: true } }, 'page text must be sent with zero data retention');
     assert.deepEqual(body.state.interface.split('\n').slice(1, 3), selected === 'Home' ? ['0 tab (selected) Home', '1 tab (not selected) Settings'] : ['0 tab (not selected) Home', '1 tab (selected) Settings'], 'Jev must be shown which tabs are not selected');
     told.push(body.state.history);
     const { criteria } = body.questions.next;
@@ -110,6 +112,17 @@ for (const [settles, status, error] of [[false, 'loading_timeout', /could not be
   assert.equal(out.status, 'needs_verification');
   assert.deepEqual(out.history.map((h) => h.reason), ['decision_retry', 'decision_retry', undefined]);
   assert.ok(performance.now() - started >= 1400, 'failed Jev requests were retried without backing off');
+  for (const [reply, status, error] of [
+    [() => Response.json({ error: { message: 'bad key', type: 'authentication_error' } }, { status: 401 }), 'decision_error', /gateway HTTP 401/],
+    [(init) => answer(JSON.parse(init.body).questions.next.criteria, 'DONE', 'high'), 'decision_error', /Invalid gateway decision schema/],
+  ]) {
+    requests = 0;
+    globalThis.fetch = async (_url, init) => { requests++; return reply(init); };
+    const failed = await bridge.run(tab, { goal: 'Open Settings', key, allowedOrigins: ['https://example.test'], policy, maxDecisionRetries: 2 });
+    assert.equal(failed.status, status);
+    assert.match(failed.error, error);
+    assert.equal(requests, 1, `a request that cannot succeed was retried (${error})`);
+  }
 }
 
 // 3. Page text cannot forge a row, the URL, or states; unnamed controls get an explicit, parseable slot;
