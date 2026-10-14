@@ -10,13 +10,14 @@ let confidence = 0.8;
 let calls = 0;
 globalThis.fetch = async (url, init) => {
   calls++;
-  assert.equal(url, 'https://ai-gateway.vercel.sh/typesafe/v1/systemone');
-  assert.equal(init.headers.Authorization, 'Bearer test-key');
+  assert.equal(url, 'https://ai-gateway.vercel.sh/v4/ai/evaluation-model');
+  assert.equal(init.headers.authorization, 'Bearer test-key');
   const request = JSON.parse(init.body);
   assert.equal(request.state.interface.app, 'Example');
   const criteria = request.questions.next.criteria;
-  return Response.json({ model: 'typesafe-ai/jev', answers: { next: { type: 'choice', choice, confidence,
-    probabilities: Object.fromEntries(Object.keys(criteria).map((key) => [key, key === choice ? 1 : 0])) } } });
+  return Response.json({ answers: { next: { type: 'choice', choice,
+    probabilities: Object.fromEntries(Object.keys(criteria).map((key) => [key, key === choice ? 1 : 0])) } },
+    providerMetadata: { typesafe: { confidence: { next: confidence } } } });
 };
 try {
   assert.equal((await choose(task, 'test-key')).action.index, 3);
@@ -38,6 +39,6 @@ try {
   await assert.rejects(choose({ ...task, state: 'test-key' }, 'test-key'), /Credential detected/);
   assert.equal(calls, before, 'invalid input must not reach the provider');
   globalThis.fetch = async () => Response.json({}, { status: 503 });
-  await assert.rejects(choose(task, 'test-key'), /gateway HTTP 503/);
+  await assert.rejects(choose(task, 'test-key'), /gateway request failed and can be retried \(HTTP 503\)/);
   console.log('ok: native proposals, scroll, handoffs, invalid choices/input, credential rejection, provider failure; no UI executed');
 } finally { globalThis.fetch = realFetch; }

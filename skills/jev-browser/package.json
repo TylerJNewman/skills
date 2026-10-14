@@ -1,0 +1,9 @@
+{
+  "name": "jev-browser",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "ai": "7.0.107"
+  }
+}
