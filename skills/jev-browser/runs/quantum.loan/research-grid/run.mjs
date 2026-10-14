@@ -55,19 +55,8 @@ async function control(kind, match = () => true) {
   return hits[0].index;
 }
 
-async function visible() {
-  if (await tab.evaluate('document.visibilityState') !== 'visible') {
-    const filename = `ui-${receipt.uiChecks.length}.png`;
-    await tab.screenshot(resolve(output, filename));
-    receipt.screenshots.push(filename);
-  }
-  if (await tab.evaluate('document.visibilityState') !== 'visible') throw new Error('Dex Work tab is covered; UI smoke proof requires the visible tab');
-}
-
 async function click(kind, match) {
-  await visible();
   await tab.click(await control(kind, match));
-  if (tab.inputs.has('page-dispatched') || tab.animationsOff) throw new Error('UI input used a hidden-tab path; no UI pass is recorded');
 }
 
 try {
@@ -113,9 +102,6 @@ try {
 
   await tab.screenshot(resolve(output, 'before-ui.png'));
   receipt.screenshots.push('before-ui.png');
-  // screenshot brings the tab forward; reset only earlier semantic-path animation observations.
-  tab.inputs.clear();
-  tab.animationsOff = false;
   await click('page', item => item.researchGrid.page === 'next');
   record('uiChecks', 'Next Page click', await ready(value => value.page === 2));
   await click('page', item => item.researchGrid.page === 'previous');
@@ -130,14 +116,11 @@ try {
 
   const entity = first.rows.find(row => typeof row.entityName === 'string' && row.entityName.trim())?.entityName;
   if (!entity) throw new Error('no entity name is available for the filter smoke');
-  await visible();
   await tab.pressKey(null, 'Ctrl+Enter');
   await click('filter-operator');
   await click('filter-operator-option', item => item.name === 'Equals');
-  await visible();
   await tab.type(await control('filter-input'), entity);
   const filtered = await ready(value => value.filters.entity?.filter === entity && value.filters.entity?.type === 'equals');
-  if (tab.inputs.has('page-dispatched') || tab.animationsOff) throw new Error('filter input used a hidden-tab path; no UI pass is recorded');
   assert.ok(filtered.rows.length && filtered.rows.every(row => typeof row.entityName === 'string' && row.entityName.toLowerCase() === entity.toLowerCase()), 'filtered rows must contain the selected entity name');
   record('uiChecks', 'text filter through actual input', filtered);
   await tab.pressKey(null, 'Escape');

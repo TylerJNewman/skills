@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev autopilot.
+import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import * as bridge from './bridge.mjs';
 import { callResearchTool, isResearchUrl, listResearchTools, researchActionAllowed } from './research-grid.mjs';
-import { attachTab, browserInstance, closeTarget, openedBy, openInDexWork, POPUP, targetInfo, within } from './tab.mjs';
+import { attachTab, browserInstance, closeTarget, openedBy, openInDexWork, openTargetIds, POPUP, targetInfo, within } from './tab.mjs';
 
 const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev autopilot.
 
   jb open <url>                    open a Dex Work tab; prints its id, sign-in, and the page's controls
+                                   JB_PROFILE=dev opens it in the dev@quantafinance.com test profile instead
   jb <tab> go <url>                load a URL in the tab
   jb <tab> snap [--text] [regex]   print the controls (--text adds page text; regex keeps matching lines)
   jb <tab> click "<name>" ...      click each named control in order; each waits up to 10 s to appear
@@ -21,7 +24,9 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
   jb <tab> press <key>             Enter, Escape, Tab, Shift+Tab, arrows, PageUp, PageDown, Home, End; Ctrl+Enter opens a Research header filter
   jb <tab> jev "<goal>" [--allow "<regex>"] [--steps N]
                                    Jev autopilot toward one observable goal, on an approved origin
-  jb <tab> shot [file.png]         screenshot the viewport and print its path (brings the Dex window forward)
+  jb <tab> shot [file.png] [--front]
+                                   screenshot the viewport and print its path, raising the Dex window only when
+                                   --front asks or no frame can be captured without it
   jb <tab> close                   close the tab
 
   --yes   after click, type, press, or attach: Tyler approved this consequential action in chat.
@@ -29,18 +34,21 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
 
 <tab> is the id jb printed, or any unique prefix. jb drives only tabs it opened and tabs those opened.
 Autopilot runs only on origins listed in ~/.config/jev-browser/origins (one per line), because
-it sends the page's text to TypeSafe through Vercel AI Gateway. It reads AI_GATEWAY_API_KEY from
-JEV_ENV_FILE (default: the muse-birds .env.local, per the /jev skill).`;
+it sends the page's text to TypeSafe through Vercel AI Gateway. It takes AI_GATEWAY_API_KEY from the
+environment, or else from Infisical (prod, /agents/ai-gateway).`;
 
 const HOME = join(homedir(), '.cache', 'jev-browser');
 const OWNED = join(HOME, 'tabs'); // one file per tab jb owns: <targetId>.json
+const RUNS = join(HOME, 'runs');
 const ORIGINS = join(homedir(), '.config', 'jev-browser', 'origins');
-const JEV = { envFile: process.env.JEV_ENV_FILE ?? '/Users/tyler/code/muse-birds/.env.local' };
+const GATEWAY_KEY_IN_INFISICAL = ['secrets', 'get', 'AI_GATEWAY_API_KEY', '--env=prod', '--path=/agents/ai-gateway', '--plain', '--silent'];
 const QUANTUM = 'https://quantum.loan';
 const ACCOUNT = 'tnewman@quantafinance.com';
 const SHELL = '[data-sidebar]'; // Quantum's app-shell sidebar parts (at least its trigger); absent on its sign-in page
 const SEARCH_DIALOG = 'Search Quantum';
 const SEARCH_BUTTON = /^Search\b.*⌘ ?K$/; // its label changes between releases ("Search everything... ⌘ K", "Search... ⌘ K")
+const SEARCH_RESULT_GROUP = /^(?:Loans|Loan Quotes|Borrowers|Contacts|Did you mean \(people\)|Choose a participant record for .*)$/s;
+const isSearchResult = (m) => SEARCH_RESULT_GROUP.test(m?.group ?? '');
 // Buttons on quantum.loan reviewed as navigation only: they open the sidebar, its menus, or the loan's section list.
 const QUANTUM_OPENERS = new Set(['Toggle Sidebar', 'Loan sections', 'Leads', 'Loans', 'Borrowers', 'Accounting', 'More', 'Admin', 'Developer', 'Open chat']);
 const CHAT_DIALOG = 'Chat'; // the chat drawer `Open chat` opens; its message box is named CHAT_COMPOSER
@@ -58,7 +66,22 @@ const SAFE_KEYS = new Set(['Tab', 'Shift+Tab', 'Escape']); // move focus or clos
 const ACTIVATABLE = new Set(['link', 'button', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'tab', 'treeitem', 'checkbox', 'radio', 'switch']);
 const NOT_CLICKABLE = new Set(['text', 'heading', 'dialog', 'alertdialog', 'alert', 'status']);
 const TYPEABLE = new Set(['text field', 'combo box', 'spinbutton']);
+const TYPED_VALUE = new RegExp(`^(\\d+ (?:${[...TYPEABLE].join('|')})(?: \\([^)]*\\))? .*?), Value: .*$`, 'gm');
+const withoutTypedValues = (state) => state.replace(TYPED_VALUE, '$1');
+const SCROLL_ROOM = `(() => {
+  const wheelScrolls = (e) => (e === document.scrollingElement
+    ? ![e, document.body].some((x) => x && /hidden|clip/.test(getComputedStyle(x).overflowY))
+    : /auto|scroll|overlay/.test(getComputedStyle(e).overflowY));
+  const room = new Set();
+  for (let e = document.elementFromPoint(innerWidth / 2, innerHeight / 2); e; e = e.parentElement) {
+    if (!wheelScrolls(e)) continue;
+    if (e.scrollTop + e.clientHeight < e.scrollHeight - 1) room.add('down');
+    if (e.scrollTop > 0) room.add('up');
+  }
+  return ['down', 'up'].filter((direction) => room.has(direction));
+})()`;
 const MAX_MS = 45000; // one autopilot run
+const ARRIVAL_CONFIDENCE = 0.85;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const originOf = (url) => { try { return new URL(url).origin; } catch { return ''; } };
@@ -89,7 +112,7 @@ const isDisabled = (m) => m.props.disabled === true || m.props.disabled === 'tru
 /**
  * The execution check behind every click, type, and key press, hand-flown or Jev's. It decides on facts
  * read at dispatch time: `meta` for the target, `focused` for keys, each with Chrome's role, name, and
- * properties, its dialog's name, and its search relationship (searchInput, inResults, resultSelected).
+ * properties, its dialog's name, and its search relationship (searchInput, inResults, group).
  * Returns null, or { reason, hard }: a hard refusal cannot be overridden; a soft one needs Tyler's --yes.
  * Quantum permits navigation/search and explicitly approved chat-composer input.
  */
@@ -111,14 +134,15 @@ export function verdictFor({ verb, meta, key, focused, quantum, href }) {
       if (isToggle(meta) || CONSEQUENTIAL.test(meta.name)) return hard(`unsupported quantum.loan action: ${meta.role} ${said(meta)} could change data`);
       if (meta.role === 'tab' || meta.role === 'link') return null;
       if (meta.role === 'button' && (QUANTUM_OPENERS.has(meta.name) || SEARCH_BUTTON.test(meta.name))) return null;
-      if (meta.dialog === SEARCH_DIALOG && ((meta.role === 'option' && meta.inResults) || (meta.role === 'button' && meta.name === 'Close'))) return null;
-      return hard(`unsupported quantum.loan action: jb clicks only tabs, links, reviewed menu openers, the search palette, and chat input controls, not ${meta.role} ${said(meta)}`);
+      if (meta.dialog === SEARCH_DIALOG && ((meta.role === 'option' && meta.inResults && isSearchResult(meta)) || (meta.role === 'button' && meta.name === 'Close'))) return null;
+      return hard(`unsupported quantum.loan action: jb clicks only tabs, links, reviewed menu openers, search results, and chat input controls, not ${meta.role} ${said(meta)}`);
     }
     if (verb === 'type') return meta.dialog === SEARCH_DIALOG && meta.searchInput ? null : hard('unsupported quantum.loan action: jb types only into the search palette\'s own input or the chat composer');
     if (SAFE_KEYS.has(key)) return null;
     if (isChatField(focused)) return soft('Quantum chat input needs task authorization');
     if (!(focused?.dialog === SEARCH_DIALOG && focused.searchInput)) return hard(`unsupported quantum.loan action: ${key} goes only to the search palette's own input or the chat composer`);
-    return key === 'Enter' && !focused.resultSelected ? hard('no search result is selected; snap and check it first') : null;
+    if (key !== 'Enter' || isSearchResult(focused)) return null;
+    return hard(`${focused.group ? `the selected option is in the "${focused.group}" group, not a search result` : 'no search result is selected'}; press ArrowDown to reach one, then snap and check it`);
   }
   if (verb === 'click') {
     if (isToggle(meta)) return soft(`${said(meta)} is a ${meta.role}; flipping it changes a setting`);
@@ -203,6 +227,8 @@ async function find(tab, name, fits) {
     const hits = entries.filter((e) => (name === '' ? e.states.includes('focused') : nameOf(e) === name));
     if (hits.length === 1) return { state, entry: hits[0] };
     if (hits.length > 1) throw new Error(`${hits.length} elements named "${name}"; snap and pick a control with a unique name`);
+    const repeats = entries.filter((e) => name && nameOf(e).startsWith(`${name} (in: `));
+    if (repeats.length) throw new Error(`${repeats.length} elements named "${name}"; pass one as snap prints it, such as "${nameOf(repeats[0])}"`);
     if (Date.now() > deadline) throw new Error(`nothing named "${name}" after 10 s; jb <tab> snap shows the names`);
     await sleep(250);
   }
@@ -217,6 +243,20 @@ const ownedIds = () => (existsSync(OWNED) ? readdirSync(OWNED).filter((f) => f.e
 const isOwned = (targetId) => existsSync(join(OWNED, `${targetId}.json`));
 const recordOf = (targetId) => JSON.parse(readFileSync(join(OWNED, `${targetId}.json`), 'utf8'));
 const disown = (targetId) => { try { unlinkSync(join(OWNED, `${targetId}.json`)); } catch {} };
+
+async function forgetClosedTabs() {
+  const ownedBeforeLooking = ownedIds();
+  const open = await openTargetIds();
+  for (const id of ownedBeforeLooking) if (!open.has(id)) disown(id);
+}
+
+async function gatewayKey() {
+  if (process.env.AI_GATEWAY_API_KEY) return process.env.AI_GATEWAY_API_KEY;
+  const { stdout } = await promisify(execFile)('infisical', GATEWAY_KEY_IN_INFISICAL, { cwd: homedir(), timeout: 15000 }).catch((error) => {
+    throw new Error(`could not get AI_GATEWAY_API_KEY from Infisical (prod, /agents/ai-gateway): ${error.stderr?.trim() || error.message}`);
+  });
+  return stdout.trim();
+}
 
 export async function resolveTab(prefix) {
   const ids = ownedIds().filter((id) => id.startsWith(prefix));
@@ -319,17 +359,20 @@ async function fresh(tab) {
  * snapshot is read and preflighted within the run's time, or not released at all; and after the
  * deadline no input starts and no request goes to Jev (bridge.mjs calls the tab's lastCheck).
  */
-export function pilotOf(tab, deadline) {
+export function pilotOf(tab, deadline, policy) {
   tab.deadline = deadline;
   const release = async (args) => {
     const state = await tab.getAXState(...args);
+    policy.scrollDirections = await tab.evaluate(SCROLL_ROOM);
     await preflight(tab, tab.url);
-    return state;
+    return withoutTypedValues(state);
   };
   return Object.create(tab, {
     getAXState: { value: (...args) => within(deadline - performance.now(), release(args), 'reading and checking the page in the run\'s remaining time') },
   });
 }
+
+export const doubtWeakArrival = (out) => (out.status === 'needs_verification' && out.history.at(-1).confidence < ARRIVAL_CONFIDENCE ? { ...out, status: 'low_confidence' } : out);
 
 async function autopilot(tab, goal, { allow, steps }) {
   await tab.getAXState();
@@ -338,14 +381,15 @@ async function autopilot(tab, goal, { allow, steps }) {
     throw new Error(`autopilot is off for ${origin}: it would send this page's text to TypeSafe through Vercel. Hand-fly it, or ask Tyler to add the origin to ${ORIGINS}`);
   }
   const policy = {
-    click: true, scrollDirections: ['down', 'up'], denyStates: ['disabled'],
+    click: true, denyStates: ['disabled'],
     denyRoles: origin === QUANTUM ? NOT_NAVIGATION : TOGGLES,
     denyNames: [CONSEQUENTIAL, /^\(no name\)/], ...(allow ? { allowNames: [new RegExp(allow)] } : {}),
   };
   let out;
   try {
     // Each run is fresh and stays on the origin it started on; after hand-flying, a new run takes over.
-    out = await bridge.run(pilotOf(tab, performance.now() + MAX_MS), { ...JEV, goal, policy, allowedOrigins: [origin], maxSteps: Number(steps ?? 12), maxMs: MAX_MS, minConfidence: 0.55 });
+    const key = await gatewayKey();
+    out = doubtWeakArrival(await bridge.run(pilotOf(tab, performance.now() + MAX_MS, policy), { key, goal, policy, allowedOrigins: [origin], maxSteps: Number(steps ?? 12), maxMs: MAX_MS, minConfidence: 0.55, maxDecisionRetries: 2 }));
   } catch (error) {
     console.log(`jev stopped: ${error.message}`);
     console.log('next: nothing more was sent to Jev; inspect the state below and replan');
@@ -354,22 +398,19 @@ async function autopilot(tab, goal, { allow, steps }) {
   }
   console.log(`jev ${out.status} in ${(out.elapsedMs / 1000).toFixed(1)}s: ${out.history.map(describe).join(' > ')}`);
   if (out.error) console.log(`error ${out.error}`);
+  mkdirSync(RUNS, { recursive: true, mode: 0o700 });
+  const record = join(RUNS, `${short(tab.targetId)}-${Date.now()}.json`);
+  writeFileSync(record, JSON.stringify({ goal, origin, status: out.status, elapsedMs: out.elapsedMs, error: out.error, history: out.history }, null, 1), { mode: 0o600 });
+  if (out.status !== 'needs_verification') {
+    const alternatives = out.history.at(-1)?.alternatives;
+    if (alternatives) console.log(`torn between: ${alternatives.map((a) => `${a.choice} ${a.probability.toFixed(2)}`).join(', ')}`);
+    console.log(`record ${record}`);
+  }
   console.log(`next: ${NEXT[out.status]}`);
   console.log(out.status === 'needs_verification' ? `url ${tab.url}` : await fresh(tab));
 }
 
-// In a hidden tab Chrome can drop or delay key presses and blocks new tabs, so a silent result there says so.
-function hiddenAndInert(tab, changes) {
-  if ((tab.inputs.has('page-dispatched') || tab.animationsOff) && changes.endsWith('(no visible change)')) {
-    console.log('(nothing visibly changed in this hidden tab; Chrome can drop key presses and block new tabs there. `jb <tab> shot` brings the Dex window forward; then retry)');
-  }
-}
-
-function note(tab, settled) {
-  const facts = [];
-  if (tab.inputs.has('page-dispatched')) facts.push('pointer input was page-dispatched');
-  if (tab.animationsOff) facts.push('animations were off');
-  if (facts.length) console.log(`(hidden tab: ${facts.join('; ')}; this is navigation evidence only, so check interaction or visual behavior with the window visible)`);
+function note(settled) {
   if (settled === false) console.log('(page still changing after 5 s: snap again before relying on this)');
 }
 
@@ -379,7 +420,10 @@ async function main([first, verb, ...rest]) {
 
   if (first === 'open') {
     if (!/^https?:\/\//.test(verb ?? '')) throw new Error('usage: jb open <url>');
-    const { targetId, contextId, browser } = await openInDexWork();
+    await forgetClosedTabs();
+    const profile = process.env.JB_PROFILE || 'work';
+    const { targetId, contextId, browser } = await openInDexWork(profile);
+    if (profile !== 'work') console.log(`(profile: ${profile}, not Dex Work)`);
     let tab;
     try {
       own(targetId, { contextId, browser, url: verb });
@@ -388,7 +432,7 @@ async function main([first, verb, ...rest]) {
       const settled = await tab.navigate(verb);
       await tab.getAXState();
       await reportIdentity(tab);
-      note(tab, settled);
+      note(settled);
       console.log(view(await tab.getAXState()));
     } catch (error) {
       // A tab that never became usable is closed rather than left behind, and stays owned if it will not close.
@@ -423,7 +467,7 @@ async function main([first, verb, ...rest]) {
       const settled = await tab.navigate(rest[0]);
       await tab.getAXState();
       await reportIdentity(tab);
-      note(tab, settled);
+      note(settled);
       console.log(view(await tab.getAXState()));
     } else if (verb === 'snap') {
       const text = rest.includes('--text');
@@ -455,7 +499,6 @@ async function main([first, verb, ...rest]) {
           break;
         }
       }
-      note(tab);
       console.log(diff(first, await tab.getAXState(), tab.url));
     } else if (verb === 'type') {
       const [name, text, ...flags] = rest;
@@ -463,7 +506,7 @@ async function main([first, verb, ...rest]) {
       guard(tab, flags.includes('--yes'));
       const { state, entry } = await find(tab, name, (role) => TYPEABLE.has(role));
       const settled = await tab.type(entry.index, text);
-      note(tab, settled);
+      note(settled);
       console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'attach') {
       const [path, ...flags] = rest;
@@ -471,25 +514,24 @@ async function main([first, verb, ...rest]) {
       guard(tab, flags.includes('--yes'));
       const { state, entry } = await find(tab, 'Attach file', (role) => role === 'button');
       const settled = await tab.attachPdf(entry.index, path);
-      note(tab, settled);
+      note(settled);
       console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'press') {
       const [key, ...flags] = rest;
       guard(tab, flags.includes('--yes'));
       const state = await tab.getAXState();
       const settled = await tab.pressKey(null, key);
-      note(tab, settled);
-      const changes = diff(state, await tab.getAXState(), tab.url);
-      console.log(changes);
-      if (!tab.windowOpens.length) hiddenAndInert(tab, changes);
+      note(settled);
+      console.log(diff(state, await tab.getAXState(), tab.url));
     } else if (verb === 'jev') {
       guard(tab, false);
       const flag = (name) => { const i = rest.indexOf(name); return i > 0 ? rest[i + 1] : undefined; };
       await autopilot(tab, rest[0], { allow: flag('--allow'), steps: flag('--steps') });
-      note(tab);
     } else if (verb === 'shot') {
-      const path = rest[0] ?? join(HOME, `${short(id)}-${Date.now()}.png`);
-      await tab.screenshot(path);
+      const front = rest.includes('--front');
+      const path = rest.find((a) => a !== '--front') ?? join(HOME, `${short(id)}-${Date.now()}.png`);
+      const raised = await tab.screenshot(path, { front });
+      if (raised && !front) console.log('(no frame could be captured in 3 s, so the Dex window was brought forward)');
       console.log(`saved ${path}`);
     } else {
       throw new Error(`unknown verb ${verb ?? ''}\n\n${USAGE}`);
