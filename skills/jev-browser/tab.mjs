@@ -421,16 +421,43 @@ export async function attachTab(targetId, { connection } = {}) {
       return settle();
     },
 
-    async screenshot(path, { front = false } = {}) {
-      const capture = () => c.send('Page.captureScreenshot', { format: 'png' });
-      let shot = front ? null : await within(3000, capture(), 'the capture').catch(() => null);
-      const raised = !shot;
-      if (raised) {
-        await c.send('Page.bringToFront');
-        shot = await capture();
+    async screenshot(path, { front = false, width = 0, height = 0, deviceScaleFactor = 1, freezeAnimations = false } = {}) {
+      if (width > 0 && height > 0) {
+        await c.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor, mobile: false });
       }
-      writeFileSync(path, Buffer.from(shot.data, 'base64'));
-      return raised;
+      if (freezeAnimations) {
+        await c.send('Runtime.evaluate', {
+          expression: `(() => {
+            let el = document.getElementById('__jb_freeze_style');
+            if (!el) {
+              el = document.createElement('style');
+              el.id = '__jb_freeze_style';
+              el.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; caret-color: transparent !important; }';
+              document.head.appendChild(el);
+            }
+          })()`,
+        });
+      }
+      try {
+        const capture = () => c.send('Page.captureScreenshot', { format: 'png' });
+        let shot = front ? null : await within(3000, capture(), 'the capture').catch(() => null);
+        const raised = !shot;
+        if (raised) {
+          await c.send('Page.bringToFront');
+          shot = await capture();
+        }
+        writeFileSync(path, Buffer.from(shot.data, 'base64'));
+        return raised;
+      } finally {
+        if (freezeAnimations) {
+          await c.send('Runtime.evaluate', {
+            expression: `document.getElementById('__jb_freeze_style')?.remove()`,
+          }).catch(() => {});
+        }
+        if (width > 0 && height > 0) {
+          await c.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+        }
+      }
     },
   };
 
