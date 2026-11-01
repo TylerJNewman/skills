@@ -13,6 +13,7 @@ const USAGE = `jb: drive Chrome tabs in the Dex Work profile, by hand or on Jev 
 
   jb open <url>                    open a Dex Work tab; prints its id, sign-in, and the page's controls
                                    JB_PROFILE=dev opens it in the dev@quantafinance.com test profile instead
+                                   JB_PROFILE=personal opens it in Dex Personal instead
   jb <tab> go <url>                load a URL in the tab
   jb <tab> snap [--text] [regex]   print the controls (--text adds page text; regex keeps matching lines)
   jb <tab> click "<name>" ...      click each named control in order; each waits up to 10 s to appear

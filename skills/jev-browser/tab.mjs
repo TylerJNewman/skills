@@ -151,9 +151,9 @@ export async function browserInstance() {
   return (await (await fetch(`${endpoint()}/json/version`, { signal: AbortSignal.timeout(15000) })).json()).webSocketDebuggerUrl.split('/').pop();
 }
 
-// The profiles jb may open tabs in. Dex Personal is deliberately absent. `dev` is the dev@quantafinance.com test account,
+// The profiles jb may open tabs in. `dev` is the dev@quantafinance.com test account,
 // which Tyler approved on 2026-10-05 for sending test messages to his work account.
-export const PROFILES = { work: 'Default', dev: 'Profile 3' };
+export const PROFILES = { work: 'Default', personal: 'Profile 2', dev: 'Profile 3' };
 
 /**
  * Open an inert tab in the Dex Work profile through Chrome's own profile routing
