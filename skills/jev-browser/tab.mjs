@@ -6,8 +6,9 @@
 // actions and Jev's actions meet the same check at the moment of dispatch.
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { statSync, writeFileSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { hostname } from 'node:os';
 import { browser, connect, endpoint } from './cdp.mjs';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -153,18 +154,29 @@ export async function browserInstance() {
 
 // The profiles jb may open tabs in. `dev` is the dev@quantafinance.com test account,
 // which Tyler approved on 2026-10-05 for sending test messages to his work account.
-export const PROFILES = { work: 'Default', personal: 'Profile 2', dev: 'Profile 3' };
+export const PROFILES = { work: null, personal: 'Profile 2', dev: 'Profile 3' };
 
-/**
- * Open an inert tab in the Dex Work profile through Chrome's own profile routing
- * (--profile-directory=Default) and claim exactly that tab by its one-time address. The caller then
- * navigates it. Tabs made with /json/new or Target.createTarget land in Chrome's last-used profile
- * instead, which can be Dex Personal. The inert page is this skill's blank.html, because Chrome turns
- * a command-line about:blank into its new-tab page.
- */
+export function profileDirectory(profile, infoCache, host = hostname()) {
+  if (!Object.hasOwn(PROFILES, profile)) throw new Error(`unknown profile "${profile}"; jb opens only: ${Object.keys(PROFILES).join(', ')}`);
+  if (profile !== 'work') return PROFILES[profile];
+  if (host === 'Tylers-MacBook-Pro.local') {
+    const bound = infoCache?.Default;
+    if (bound?.name !== 'DEX - work' || typeof bound.user_name !== 'string' || !['', 'tnewman@quantafinance.com'].includes(bound.user_name.toLowerCase())) {
+      throw new Error('the bound DEX Work profile on this Mac is missing or has different account metadata. No tab opened');
+    }
+    return 'Default';
+  }
+  const matches = Object.entries(infoCache ?? {}).filter(([, info]) =>
+    typeof info?.user_name === 'string' && info.user_name.toLowerCase() === 'tnewman@quantafinance.com');
+  if (matches.length !== 1) throw new Error(`expected exactly one existing Chrome profile for tnewman@quantafinance.com; found ${matches.length}. No tab opened`);
+  const [directory] = matches[0];
+  if (!/^(Default|Profile [1-9]\d*)$/.test(directory)) throw new Error('Quanta Chrome profile has an unsupported directory name. No tab opened');
+  return directory;
+}
+
 export async function openInDexWork(profile = 'work') {
-  const directory = PROFILES[profile];
-  if (!directory) throw new Error(`unknown profile "${profile}"; jb opens only: ${Object.keys(PROFILES).join(', ')}`);
+  const infoCache = profile === 'work' ? JSON.parse(readFileSync(`${DEX}/Local State`, 'utf8')).profile?.info_cache : undefined;
+  const directory = profileDirectory(profile, infoCache);
   const blank = `${new URL('./blank.html', import.meta.url).href}#jb-${randomUUID()}`;
   return withBrowser(async (b) => {
     execFileSync(CHROME, [`--user-data-dir=${DEX}`, `--profile-directory=${directory}`, blank], { stdio: 'ignore', timeout: 15000 });
