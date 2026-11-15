@@ -149,7 +149,7 @@ async function withBrowser(fn) {
 
 /** The running Chrome's instance id; it changes when Chrome restarts, and target ids with it. */
 export async function browserInstance() {
-  return (await (await fetch(`${endpoint()}/json/version`, { signal: AbortSignal.timeout(15000) })).json()).webSocketDebuggerUrl.split('/').pop();
+  return (await (await fetch(`${await endpoint()}/json/version`, { signal: AbortSignal.timeout(15000) })).json()).webSocketDebuggerUrl.split('/').pop();
 }
 
 // The profiles jb may open tabs in. `dev` is the dev@quantafinance.com test account,
@@ -202,7 +202,7 @@ export const closeTarget = (targetId) => withBrowser((b) => b.send('Target.close
 export const openTargetIds = () => withBrowser(async (b) => new Set((await b.send('Target.getTargets')).targetInfos.map((t) => t.targetId)));
 
 export async function attachTab(targetId, { connection } = {}) {
-  const c = connection ?? await connect(`${endpoint().replace('http', 'ws')}/devtools/page/${targetId}`);
+  const c = connection ?? await connect(`${(await endpoint()).replace('http', 'ws')}/devtools/page/${targetId}`);
   // First-party fetch/XHR/document requests only: third-party analytics (PostHog, Sentry) hold requests open.
   const inflight = new Set();
   let lastNetwork = 0;
