@@ -1,11 +1,35 @@
 // Minimal Chrome DevTools Protocol client over Node's built-in WebSocket, pointed at the Dex Chrome.
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const DEADLINE_MS = 15000;
+const PROBE_MS = 3000;
+const DEX = '/Users/tyler/.oracle/browser-profile';
 
-export function endpoint() {
-  const port = readFileSync('/Users/tyler/.oracle/browser-profile/DevToolsActivePort', 'utf8').split('\n')[0];
-  return `http://127.0.0.1:${port}`;
+const answers = (port) => fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(PROBE_MS) })
+  .then((r) => r.json()).then((v) => typeof v?.webSocketDebuggerUrl === 'string', () => false);
+const asPort = (text) => (/^[1-9]\d{0,4}$/.test(text ?? '') ? text : '');
+const listProcesses = () => execFileSync('/bin/ps', ['-axww', '-o', 'args='], { encoding: 'utf8' });
+
+function recordedPort(portFile) {
+  try { return asPort(readFileSync(portFile, 'utf8').split('\n')[0].trim()); } catch { return ''; }
+}
+
+const launchedPort = (processes) => processes().split('\n')
+  .filter((args) => ` ${args.trim()} `.includes(` --user-data-dir=${DEX} `))
+  .map((args) => asPort(args.match(/ --remote-debugging-port=(\d+)(?= |$)/)?.[1]))
+  .find(Boolean) ?? '';
+
+export async function endpoint({ portFile = `${DEX}/DevToolsActivePort`, processes = listProcesses } = {}) {
+  const recorded = recordedPort(portFile);
+  if (recorded && await answers(recorded)) return `http://127.0.0.1:${recorded}`;
+  const launched = launchedPort(processes);
+  if (launched && launched !== recorded && await answers(launched)) return `http://127.0.0.1:${launched}`;
+  const fileSays = `${portFile} names ${recorded ? `port ${recorded}` : 'no port'}`;
+  const chromeSays = launched
+    ? `the Chrome running with --user-data-dir=${DEX} has --remote-debugging-port=${launched}`
+    : `no Chrome running with --user-data-dir=${DEX} has a fixed --remote-debugging-port`;
+  throw new Error(`Dex Chrome DevTools answers on neither port: ${fileSays}, and ${chromeSays}`);
 }
 
 // Every command settles: with its result, the protocol error, a closed socket, or the deadline.
@@ -50,7 +74,7 @@ export async function connect(wsUrl, { socket = new WebSocket(wsUrl) } = {}) {
 
 // The browser-level connection, labeled with the running Chrome's instance id (it changes on restart).
 export async function browser() {
-  const { webSocketDebuggerUrl } = await (await fetch(`${endpoint()}/json/version`, { signal: AbortSignal.timeout(DEADLINE_MS) })).json();
+  const { webSocketDebuggerUrl } = await (await fetch(`${await endpoint()}/json/version`, { signal: AbortSignal.timeout(DEADLINE_MS) })).json();
   const c = await connect(webSocketDebuggerUrl);
   c.instance = webSocketDebuggerUrl.split('/').pop();
   return c;
