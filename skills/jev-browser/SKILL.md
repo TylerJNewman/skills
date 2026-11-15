@@ -61,6 +61,7 @@ Write the manifest, holding SHA-256 of every runner file, the applicability cont
 - Elsewhere, use `--yes` for consequential clicks, toggles and value-changing keys already authorized by the task. Ask only when the target or scope remains materially unclear; a retry, technical warning or already-approved action does not require fresh approval.
 - `jb` keeps its tab rendering and sends real pointer and key input whether or not the Dex window is covered, and `shot` captures the tab without raising the window; it raises the window, and says so, only when no frame arrives within 3 s. Use `shot --front` only when the window itself must be on screen, such as for a native file chooser.
 - `jb` touches only the tabs it opened and the tabs those opened.
+- `JB_PROFILE=personal jb open <url>` opens the tab in the personal profile, for personal accounts.
 - `JB_PROFILE=dev jb open <url>` opens the tab in the test profile signed in as dev@quantafinance.com, for sending test messages to Tyler's work account. Verify the account in the first `snap` before typing. Every other command works on that tab as usual.
 
 `jb --help` lists every verb and flag.
