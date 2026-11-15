@@ -7,7 +7,8 @@ import test from 'node:test';
 import { endpoint } from './cdp.mjs';
 
 const DEX = '/Users/tyler/.oracle/browser-profile';
-const listen = () => new Promise((ok) => { const s = createServer((_req, res) => res.end('{}')).listen(0, '127.0.0.1', () => ok(s)); });
+const DEVTOOLS = JSON.stringify({ webSocketDebuggerUrl: 'ws://127.0.0.1/devtools/browser/test' });
+const listen = (body = DEVTOOLS) => new Promise((ok) => { const s = createServer((_req, res) => res.end(body)).listen(0, '127.0.0.1', () => ok(s)); });
 const deadPort = async () => { const s = await listen(); const { port } = s.address(); await new Promise((ok) => s.close(ok)); return port; };
 const portFile = (port) => {
   const file = join(mkdtempSync(join(tmpdir(), 'jb-port-')), 'DevToolsActivePort');
@@ -23,6 +24,14 @@ test('a stale DevToolsActivePort falls back to the running Dex Chrome port', asy
     const { port } = live.address();
     assert.equal(await endpoint({ portFile: portFile(await deadPort()), processes: chromes([DEX, port]) }), `http://127.0.0.1:${port}`);
   } finally { live.close(); }
+});
+
+test('a stale port reused by another HTTP service still falls back to the Dex Chrome port', async () => {
+  const [impostor, live] = [await listen('{}'), await listen()];
+  try {
+    const { port } = live.address();
+    assert.equal(await endpoint({ portFile: portFile(impostor.address().port), processes: chromes([DEX, port]) }), `http://127.0.0.1:${port}`);
+  } finally { impostor.close(); live.close(); }
 });
 
 test('with no live Dex port the error names both ports and ignores other profiles', async () => {

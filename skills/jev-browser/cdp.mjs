@@ -6,7 +6,8 @@ const DEADLINE_MS = 15000;
 const PROBE_MS = 3000;
 const DEX = '/Users/tyler/.oracle/browser-profile';
 
-const answers = (port) => fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(PROBE_MS) }).then((r) => r.ok, () => false);
+const answers = (port) => fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(PROBE_MS) })
+  .then((r) => r.json()).then((v) => typeof v?.webSocketDebuggerUrl === 'string', () => false);
 const asPort = (text) => (/^[1-9]\d{0,4}$/.test(text ?? '') ? text : '');
 const listProcesses = () => execFileSync('/bin/ps', ['-axww', '-o', 'args='], { encoding: 'utf8' });
 
@@ -27,7 +28,7 @@ export async function endpoint({ portFile = `${DEX}/DevToolsActivePort`, process
   const fileSays = `${portFile} names ${recorded ? `port ${recorded}` : 'no port'}`;
   const chromeSays = launched
     ? `the Chrome running with --user-data-dir=${DEX} has --remote-debugging-port=${launched}`
-    : `no Chrome running with --user-data-dir=${DEX} has a --remote-debugging-port`;
+    : `no Chrome running with --user-data-dir=${DEX} has a fixed --remote-debugging-port`;
   throw new Error(`Dex Chrome DevTools answers on neither port: ${fileSays}, and ${chromeSays}`);
 }
 

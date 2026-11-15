@@ -15,7 +15,7 @@ full_ids() { for t in "${tabs[@]}"; do ls ~/.cache/jev-browser/tabs 2>/dev/null 
 port_file=~/.oracle/browser-profile/DevToolsActivePort
 live_record=$(mktemp); stale_record=$(mktemp)
 restore_port() { if cmp -s "$port_file" "$stale_record"; then cp "$live_record" "$port_file"; fi; }
-cleanup() { restore_port; for t in "${tabs[@]}"; do jb "$t" close >/dev/null 2>&1; done; }
+cleanup() { restore_port; rm -f "$live_record" "$stale_record"; for t in "${tabs[@]}"; do jb "$t" close >/dev/null 2>&1; done; }
 trap cleanup EXIT
 
 out=$(node check.mjs 2>&1); expect "offline release gate" '^ok:' "$out"
@@ -26,13 +26,16 @@ expect "open quantum.loan loan 18223 in Dex Work" '^tab [0-9A-F]{8}$' "$out"
 expect "live session is tnewman@quantafinance.com with the app shell" '^signed in as tnewman@quantafinance\.com$' "$out"
 [ -z "$q" ] && { echo "cannot continue without a tab"; exit 1; }
 
-cp "$port_file" "$live_record"
-dead=$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
-printf '%s\n/devtools/browser/stale\n' "$dead" | tee "$stale_record" > "$port_file"
-out=$(jb open https://quantum.loan/ 2>&1); s=$(sed -n 's/^tab //p' < <(printf '%s\n' "$out")); [ -n "$s" ] && tabs+=("$s")
-restore_port
-expect "stale DevToolsActivePort still opens a Dex Work tab" '^tab [0-9A-F]{8}$' "$out"
-expect "that tab is signed in as tnewman@quantafinance.com" '^signed in as tnewman@quantafinance\.com$' "$out"
+if cp "$port_file" "$live_record" 2>/dev/null; then
+  dead=$(node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
+  printf '%s\n/devtools/browser/stale\n' "$dead" | tee "$stale_record" > "$port_file"
+  out=$(jb open https://quantum.loan/ 2>&1); s=$(sed -n 's/^tab //p' < <(printf '%s\n' "$out")); [ -n "$s" ] && tabs+=("$s")
+  restore_port
+  expect "stale DevToolsActivePort still opens a Dex Work tab" '^tab [0-9A-F]{8}$' "$out"
+  expect "that tab is signed in as tnewman@quantafinance.com" '^signed in as tnewman@quantafinance\.com$' "$out"
+else
+  echo "SKIP  stale DevToolsActivePort (no port file to restore)"
+fi
 
 out=$(jb "$q" click "Loan Fees" "Status" "Loan Details" 2>&1)
 expect "chained clicks across three tabs" 'tab \([^)]*selected[^)]*\) Loan Details$' "$out"
